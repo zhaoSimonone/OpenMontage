@@ -134,7 +134,7 @@ API flow: `POST ?Action=CVSync2AsyncSubmitTask` → poll `POST ?Action=CVSync2As
 
 The implementation uses the compatible generic `CVSync2Async*` route (API version `2022-08-31`) rather than the model-specific `2024-06-06` actions presented in the public API explorer. This is intentional — the generic route supports the same Jimeng 3.0 Pro model via `req_key` while remaining stable across model updates.
 
-The `req_key` for video is `jimeng_ti2v_v30_pro`. Success code is `10000`. Task statuses: `in_queue`, `generating`, `done`, `not_found`, `expired`.
+The default `req_key` for text-to-video is `jimeng_t2v_v30`; image-to-video defaults to `jimeng_i2v_v30`. Pass `req_key` explicitly only when the account has opened a different Jimeng model SKU. Success code is `10000`. Task statuses: `in_queue`, `generating`, `done`, `not_found`, `expired`.
 
 **Authoritative API reference:** [Jimeng TI2V V30 Pro SubmitTask](https://api.volcengine.com/api-docs/view?action=JimengTI2VV30PROSubmitTask&serviceCode=cv&version=2024-06-06)
 

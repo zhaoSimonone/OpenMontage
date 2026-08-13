@@ -2,7 +2,7 @@
 
 Calls the Volcengine visual API directly (visual.volcengineapi.com) using
 HMAC-SHA256 V4 request signing with AK/SK credentials. Supports text-to-video
-and image-to-video via the Hailuo/Jimeng 3.0 Pro model.
+and image-to-video via Jimeng 3.0 models.
 
 API flow: POST CVSync2AsyncSubmitTask -> poll CVSync2AsyncGetResult ->
 download video_url.
@@ -43,7 +43,8 @@ _REGION = "cn-north-1"
 _SERVICE = "cv"
 _ALGORITHM = "HMAC-SHA256"
 _API_VERSION = "2022-08-31"
-_REQ_KEY_VIDEO = "jimeng_ti2v_v30_pro"
+_REQ_KEY_TEXT_TO_VIDEO = "jimeng_t2v_v30"
+_REQ_KEY_IMAGE_TO_VIDEO = "jimeng_i2v_v30"
 
 
 class JimengVideo(BaseTool):
@@ -73,7 +74,7 @@ class JimengVideo(BaseTool):
         "seed": True,
     }
     best_for = [
-        "Jimeng 3.0 Pro text-to-video and image-to-video via Volcengine",
+        "Jimeng 3.0 text-to-video and image-to-video via Volcengine",
         "direct ByteDance API quota usage (not through a gateway)",
         "Chinese-language prompt understanding",
     ]
@@ -128,6 +129,13 @@ class JimengVideo(BaseTool):
                 "type": "integer",
                 "minimum": 60,
                 "default": 600,
+            },
+            "req_key": {
+                "type": "string",
+                "description": (
+                    "Optional Volcengine model service identifier. Defaults to "
+                    "jimeng_t2v_v30 for text_to_video and jimeng_i2v_v30 for image_to_video."
+                ),
             },
         },
     }
@@ -220,6 +228,7 @@ class JimengVideo(BaseTool):
             task_id, ak=ak, sk=sk,
             poll_interval=float(inputs.get("poll_interval_seconds", 5.0)),
             timeout_seconds=int(inputs.get("timeout_seconds", 600)),
+            req_key=payload["req_key"],
         )
 
         download = requests.get(video_url, timeout=120)
@@ -235,7 +244,7 @@ class JimengVideo(BaseTool):
             data={
                 "provider": "volcengine",
                 "route": "jimeng_direct",
-                "model": _REQ_KEY_VIDEO,
+                "model": payload["req_key"],
                 "prompt": inputs["prompt"],
                 "operation": inputs.get("operation", "text_to_video"),
                 "frames": payload.get("frames", 121),
@@ -249,7 +258,7 @@ class JimengVideo(BaseTool):
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost(inputs),
-            model=_REQ_KEY_VIDEO,
+            model=payload["req_key"],
         )
 
     @staticmethod
@@ -259,13 +268,19 @@ class JimengVideo(BaseTool):
         return 121
 
     @staticmethod
+    def _default_req_key(operation: str) -> str:
+        if operation == "image_to_video":
+            return _REQ_KEY_IMAGE_TO_VIDEO
+        return _REQ_KEY_TEXT_TO_VIDEO
+
+    @staticmethod
     def _build_payload(inputs: dict[str, Any]) -> dict[str, Any]:
         operation = inputs.get("operation", "text_to_video")
         frames = inputs.get("frames")
         if frames is None:
             frames = JimengVideo._duration_to_frames(int(inputs.get("duration", 5)))
         payload: dict[str, Any] = {
-            "req_key": _REQ_KEY_VIDEO,
+            "req_key": inputs.get("req_key") or JimengVideo._default_req_key(operation),
             "prompt": inputs["prompt"],
             "frames": int(frames),
             "aspect_ratio": inputs.get("aspect_ratio", "16:9"),
@@ -292,13 +307,13 @@ class JimengVideo(BaseTool):
 
     def _poll_task(
         self, task_id: str, *, ak: str, sk: str,
-        poll_interval: float, timeout_seconds: int,
+        poll_interval: float, timeout_seconds: int, req_key: str,
     ) -> str:
         import requests
 
         query = {"Action": "CVSync2AsyncGetResult", "Version": _API_VERSION}
         body = json.dumps({
-            "req_key": _REQ_KEY_VIDEO,
+            "req_key": req_key,
             "task_id": task_id,
             "req_json": json.dumps({"return_url": True}),
         }, ensure_ascii=False).encode("utf-8")

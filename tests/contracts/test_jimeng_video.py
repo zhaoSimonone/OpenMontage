@@ -196,12 +196,29 @@ class TestToolSpecific:
     def test_build_payload_t2v(self):
         tool = JimengVideo()
         payload = tool._build_payload({"prompt": "a cat"})
-        assert payload["req_key"] == "jimeng_ti2v_v30_pro"
+        assert payload["req_key"] == "jimeng_t2v_v30"
         assert payload["prompt"] == "a cat"
         assert payload["frames"] == 121
         assert payload["aspect_ratio"] == "16:9"
         assert payload["seed"] == -1
         assert "image_urls" not in payload
+
+    def test_build_payload_i2v_uses_i2v_req_key(self):
+        tool = JimengVideo()
+        payload = tool._build_payload({
+            "prompt": "motion",
+            "operation": "image_to_video",
+            "image_url": "https://example.com/img.png",
+        })
+        assert payload["req_key"] == "jimeng_i2v_v30"
+
+    def test_build_payload_req_key_override(self):
+        tool = JimengVideo()
+        payload = tool._build_payload({
+            "prompt": "motion",
+            "req_key": "custom_model_key",
+        })
+        assert payload["req_key"] == "custom_model_key"
 
     def test_build_payload_i2v_includes_image(self):
         tool = JimengVideo()
