@@ -31,6 +31,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.dashscope_utils import dashscope_url
 
 
 class DashscopeAsr(BaseTool):
@@ -139,13 +140,8 @@ class DashscopeAsr(BaseTool):
         "Verify word-level timestamps before building subtitles",
     ]
 
-    SUBMIT_URL = (
-        "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/"
-        "transcription"
-    )
-    POLL_URL_TEMPLATE = (
-        "https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
-    )
+    SUBMIT_PATH = "services/audio/asr/transcription"
+    POLL_PATH_TEMPLATE = "tasks/{task_id}"
 
     def get_status(self) -> ToolStatus:
         if os.environ.get("DASHSCOPE_API_KEY"):
@@ -213,7 +209,10 @@ class DashscopeAsr(BaseTool):
 
         # Submit
         submit_resp = requests.post(
-            self.SUBMIT_URL, headers=headers, json=payload, timeout=(10, 60)
+            dashscope_url(self.SUBMIT_PATH),
+            headers=headers,
+            json=payload,
+            timeout=(10, 60),
         )
         submit_data = self._json_or_raise(submit_resp)
         self._raise_for_error(submit_resp.status_code, submit_data)
@@ -310,7 +309,7 @@ class DashscopeAsr(BaseTool):
         while time.time() < deadline:
             time.sleep(poll_interval)
             resp = requests_module.get(
-                self.POLL_URL_TEMPLATE.format(task_id=task_id),
+                dashscope_url(self.POLL_PATH_TEMPLATE.format(task_id=task_id)),
                 headers=headers,
                 timeout=(10, 60),
             )

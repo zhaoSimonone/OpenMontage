@@ -24,6 +24,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.dashscope_utils import dashscope_url
 
 
 class DashscopeTTS(BaseTool):
@@ -132,10 +133,7 @@ class DashscopeTTS(BaseTool):
         "Listen to generated audio for naturalness and pacing"
     ]
 
-    ENDPOINT = (
-        "https://dashscope.aliyuncs.com/api/v1/services/aigc/"
-        "multimodal-generation/generation"
-    )
+    ENDPOINT_PATH = "services/aigc/multimodal-generation/generation"
 
     def get_status(self) -> ToolStatus:
         if os.environ.get("DASHSCOPE_API_KEY"):
@@ -162,7 +160,7 @@ class DashscopeTTS(BaseTool):
         try:
             payload = self._build_payload(inputs)
             response = requests.post(
-                self.ENDPOINT,
+                dashscope_url(self.ENDPOINT_PATH),
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
