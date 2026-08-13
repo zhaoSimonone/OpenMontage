@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lib.remotion_browser import remotion_render_cli_args
+
 
 ROOT_DIR = Path(__file__).resolve().parent
 COMPOSER_DIR = ROOT_DIR / "remotion-composer"
@@ -96,6 +98,7 @@ def render_demo(name: str, props_path: Path, npx_cmd: str) -> None:
             str(props_path),
             "--codec",
             "h264",
+            *remotion_render_cli_args(default_concurrency=1),
         ],
         cwd=COMPOSER_DIR,
         check=True,

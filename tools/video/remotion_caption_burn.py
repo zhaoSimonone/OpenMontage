@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from lib.remotion_browser import remotion_render_cli_args
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -335,6 +336,7 @@ class RemotionCaptionBurn(BaseTool):
             f"--frames=0-{total_frames - 1}",
             "--codec=h264", "--crf=18",
             f"--output={str(Path(output_path).resolve())}",
+            *remotion_render_cli_args(default_concurrency=1),
         ]
         self.run_command(render_cmd, cwd=str(root))
 

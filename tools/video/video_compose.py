@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote, urlsplit
 
+from lib.remotion_browser import remotion_render_cli_args
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -199,6 +200,14 @@ class VideoCompose(BaseTool):
                     "`--timeout` (governs headless-browser setup and delayRender). "
                     "Raise this when the browser is slow to start (e.g. restricted "
                     "networks). The subprocess timeout is widened to match."
+                ),
+            },
+            "remotion_concurrency": {
+                "type": "integer",
+                "description": (
+                    "Optional Remotion --concurrency override. OpenMontage defaults "
+                    "to 1 for stable local Chrome rendering; set this higher after "
+                    "validating your machine/browser combination."
                 ),
             },
         },
@@ -969,6 +978,12 @@ class VideoCompose(BaseTool):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         cmd = ["npx", "remotion", "render", str(effective_entry), str(comp_id), str(output_path)]
+        cmd.extend(
+            remotion_render_cli_args(
+                concurrency=bespoke.get("concurrency"),
+                default_concurrency=1,
+            )
+        )
 
         props_path = bespoke.get("props_path")
         if props_path:
@@ -988,7 +1003,7 @@ class VideoCompose(BaseTool):
             cmd.append(f"--scale={bespoke['scale']}")
         if bespoke.get("crf") is not None:
             cmd.append(f"--crf={bespoke['crf']}")
-        if bespoke.get("concurrency"):
+        if bespoke.get("concurrency") and not any(arg.startswith("--concurrency=") for arg in cmd):
             cmd.append(f"--concurrency={bespoke['concurrency']}")
 
         try:
@@ -1954,6 +1969,12 @@ class VideoCompose(BaseTool):
             # API Remotion recommends for file paths and is cross-platform safe.
             f"--props={props_path}",
         ]
+        cmd.extend(
+            remotion_render_cli_args(
+                concurrency=inputs.get("remotion_concurrency"),
+                default_concurrency=1,
+            )
+        )
         if public_dir is not None:
             cmd.append(f"--public-dir={public_dir}")
 
