@@ -27,6 +27,7 @@ tests/qa/output/
 
 # Project workspaces (generated assets, renders — all regenerable)
 projects/
+project/
 
 # Corpus directories (downloaded stock clips, thumbnails, embeddings —
 # regenerable from source APIs via corpus_builder). Explicit rule even
@@ -40,9 +41,22 @@ music_library/
 
 # Environment & credentials
 .env
+.env.*
 .env.local
 *.env
+!.env.example
 .youtube-token.json
+*AccessKey*.txt
+*access-key*.txt
+*api-key*.txt
+*apikey*.txt
+*secret*.txt
+credentials/
+secrets/
+*.pem
+*.key
+*.p8
+*.p12
 # Google service-account / Vertex AI keys — never commit
 gcp-*.json
 *-service-account.json
