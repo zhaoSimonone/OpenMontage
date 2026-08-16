@@ -134,7 +134,7 @@ class TestIdempotencyKeys:
 
     def test_includes_all_output_affecting_fields(self):
         fields = JimengVideo().idempotency_key_fields
-        for field in ("prompt", "operation", "image_url", "frames", "aspect_ratio", "seed"):
+        for field in ("prompt", "operation", "image_url", "frames", "aspect_ratio", "seed", "req_key"):
             assert field in fields, f"missing idempotency field: {field}"
 
     def test_excludes_execution_only_fields(self):
@@ -210,7 +210,8 @@ class TestToolSpecific:
             "operation": "image_to_video",
             "image_url": "https://example.com/img.png",
         })
-        assert payload["req_key"] == "jimeng_i2v_v30"
+        assert payload["req_key"] == "jimeng_i2v_first_v30"
+        assert "aspect_ratio" not in payload
 
     def test_build_payload_req_key_override(self):
         tool = JimengVideo()
@@ -284,12 +285,62 @@ class TestToolSpecific:
         headers = JimengVideo._sign("POST", "/", {}, {}, b"{}", "ak", "sk")
         assert headers["Content-Type"] == "application/json"
 
+    def test_i2v_first_uses_model_specific_actions(self):
+        assert JimengVideo._task_query("jimeng_i2v_first_v30", operation="submit") == {
+            "Action": "JimengI2VFirstV30SubmitTask",
+            "Version": "2024-06-06",
+        }
+        assert JimengVideo._task_query("jimeng_i2v_first_v30", operation="get") == {
+            "Action": "JimengI2VFirstV30GetResult",
+            "Version": "2024-06-06",
+        }
+
+    def test_unknown_req_key_uses_generic_actions(self):
+        assert JimengVideo._task_query("custom_model_key", operation="submit") == {
+            "Action": "CVSync2AsyncSubmitTask",
+            "Version": "2022-08-31",
+        }
+        assert JimengVideo._task_query("custom_model_key", operation="get") == {
+            "Action": "CVSync2AsyncGetResult",
+            "Version": "2022-08-31",
+        }
+
+    def test_i2v_first_poll_does_not_send_generic_req_json(self):
+        assert JimengVideo._poll_accepts_req_json("jimeng_i2v_first_v30") is False
+        assert JimengVideo._poll_accepts_req_json("custom_model_key") is True
+
+    def test_i2v_first_uses_beijing_signing_region(self):
+        assert JimengVideo._signing_region("jimeng_i2v_first_v30") == "cn-beijing"
+        assert JimengVideo._signing_region("custom_model_key") == "cn-north-1"
+
+    def test_i2v_first_uses_official_signed_header_subset(self):
+        headers = JimengVideo._sign(
+            "POST",
+            "/",
+            {"Action": "JimengI2VFirstV30SubmitTask", "Version": "2024-06-06"},
+            {},
+            b"{}",
+            "ak",
+            "sk",
+            region=JimengVideo._signing_region("jimeng_i2v_first_v30"),
+            signed_headers=JimengVideo._signed_headers("jimeng_i2v_first_v30"),
+        )
+        assert "SignedHeaders=host;x-content-sha256;x-date" in headers["Authorization"]
+
+    def test_i2v_first_omits_aspect_ratio(self):
+        assert JimengVideo._omits_aspect_ratio("jimeng_i2v_first_v30") is True
+        assert JimengVideo._omits_aspect_ratio("jimeng_ti2v_v30_pro") is False
+
     def test_json_or_raise_returns_dict(self):
         class FakeResp:
             status_code = 200
             def json(self):
                 return {"code": 10000, "data": {"task_id": "123"}}
         assert JimengVideo._json_or_raise(FakeResp()) == {"code": 10000, "data": {"task_id": "123"}}
+
+    def test_result_data_supports_legacy_and_new_payloads(self):
+        assert JimengVideo._result_data({"data": {"task_id": "legacy"}})["task_id"] == "legacy"
+        assert JimengVideo._result_data({"Result": {"data": {"task_id": "new"}}})["task_id"] == "new"
 
     def test_json_or_raise_raises_on_non_json(self):
         class FakeResp:
@@ -310,9 +361,25 @@ class TestToolSpecific:
         with pytest.raises(RuntimeError, match="HTTP 401"):
             JimengVideo._check_code(401, {"code": 10004, "message": "Auth failed"})
 
+    def test_check_code_reads_response_metadata_error(self):
+        payload = {
+            "ResponseMetadata": {
+                "Error": {
+                    "Code": "AccessDenied",
+                    "Message": "No permission",
+                }
+            }
+        }
+        with pytest.raises(RuntimeError, match="AccessDenied.*No permission"):
+            JimengVideo._check_code(401, payload)
+
     def test_check_code_defaults_to_success_when_code_missing(self):
         """If code field is absent on HTTP 2xx, default to 10000 (success)."""
         JimengVideo._check_code(200, {"data": {"task_id": "123"}})
+
+    def test_check_code_reads_result_code(self):
+        with pytest.raises(RuntimeError, match="code=10008"):
+            JimengVideo._check_code(200, {"Result": {"code": 10008, "message": "Insufficient balance"}})
 
 
 # ------------------------------------------------------------------
