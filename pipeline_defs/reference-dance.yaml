@@ -142,18 +142,23 @@ stages:
     produces:
       - continuity_report
       - final_review
+    required_tools:
+      - reference_dance_qa
     tools_available:
       - frame_sampler
       - video_analyzer
       - visual_qa
+      - reference_dance_qa
     checkpoint_required: true
     human_approval_default: true
     review_focus:
       - Dance motion is not judged by container validity alone
+      - Motion energy, lower-body travel, and seam continuity are scored explicitly
       - Full-body framing and side placement are preserved
       - Stiffness, lower-body motion, and camera drift are reviewed
     success_criteria:
       - Review artifact includes motion, identity, camera, and continuity notes
+      - Review artifact includes motion_score and continuity_score with a clear decision
       - Failing motion quality recommends regenerate rather than cosmetic stitching
 
   - name: compose

@@ -37,5 +37,6 @@ def test_reference_dance_required_tools_include_p0_planner():
     required = get_required_tools(manifest)
 
     assert "reference_dance_h3_plan" in required
+    assert "reference_dance_qa" in required
     assert "minimax_h3_video" in required
     assert "video_stitch" in required

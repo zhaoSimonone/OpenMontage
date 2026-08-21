@@ -179,6 +179,18 @@ class MiniMaxH3Video(BaseTool):
                 "minimum": 60,
                 "default": 900,
             },
+            "submit_timeout_seconds": {
+                "type": "integer",
+                "minimum": 60,
+                "default": 180,
+                "description": "HTTP read timeout for the initial task submission.",
+            },
+            "query_timeout_seconds": {
+                "type": "integer",
+                "minimum": 30,
+                "default": 60,
+                "description": "HTTP read timeout for each task status query.",
+            },
         },
     }
 
@@ -276,12 +288,17 @@ class MiniMaxH3Video(BaseTool):
         from tools.video._shared import probe_output
 
         payload = self._build_payload(inputs)
-        task_id = self._submit_task(payload, api_key=api_key)
+        task_id = self._submit_task(
+            payload,
+            api_key=api_key,
+            timeout_seconds=int(inputs.get("submit_timeout_seconds", 180)),
+        )
         task = self._poll_task(
             task_id,
             api_key=api_key,
             poll_interval=float(inputs.get("poll_interval_seconds", 10.0)),
             timeout_seconds=int(inputs.get("timeout_seconds", 900)),
+            request_timeout_seconds=int(inputs.get("query_timeout_seconds", 60)),
         )
         video_url = self._extract_video_url(task)
         if not video_url:
@@ -321,14 +338,20 @@ class MiniMaxH3Video(BaseTool):
             model=payload["model"],
         )
 
-    def _submit_task(self, payload: dict[str, Any], *, api_key: str) -> str:
+    def _submit_task(
+        self,
+        payload: dict[str, Any],
+        *,
+        api_key: str,
+        timeout_seconds: int = 180,
+    ) -> str:
         import requests
 
         resp = requests.post(
             self._submit_url(),
             headers=self._headers(api_key),
             json=payload,
-            timeout=60,
+            timeout=timeout_seconds,
         )
         data = self._json_or_raise(resp)
         self._raise_for_api_error(resp.status_code, data)
@@ -341,6 +364,7 @@ class MiniMaxH3Video(BaseTool):
         api_key: str,
         poll_interval: float,
         timeout_seconds: int,
+        request_timeout_seconds: int = 60,
     ) -> dict[str, Any]:
         import requests
 
@@ -348,7 +372,11 @@ class MiniMaxH3Video(BaseTool):
         last_payload: dict[str, Any] = {}
         while time.time() < deadline:
             time.sleep(min(poll_interval, max(0.0, deadline - time.time())))
-            resp = requests.get(self._query_url(task_id), headers=self._headers(api_key), timeout=60)
+            resp = requests.get(
+                self._query_url(task_id),
+                headers=self._headers(api_key),
+                timeout=request_timeout_seconds,
+            )
             data = self._json_or_raise(resp)
             self._raise_for_api_error(resp.status_code, data)
             last_payload = data

@@ -66,6 +66,8 @@ def test_writes_h3_request_and_generation_attempt(tmp_path):
     assert attempt["operation"] == "reference_to_video"
     assert attempt["metadata"]["paid_generation_submitted"] is False
     assert attempt["metadata"]["one_shot"] is True
+    assert attempt["metadata"]["quality_gate"]["motion_score_threshold"] == 0.70
+    assert attempt["metadata"]["quality_gate"]["failed_motion_attempts_before_fallback"] == 2
 
 
 def test_prompt_contains_p0_controls(tmp_path):

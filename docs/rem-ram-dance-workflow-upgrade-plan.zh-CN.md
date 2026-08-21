@@ -625,3 +625,10 @@ P0-4：确认后再付费生成
 
 这样风险最低，也最符合当前目标：继续使用 MiniMax-H3，但让它在更严格的舞蹈生产工作流里发挥到上限。
 
+## 13. 当前落地状态（2026-08-22）
+
+- 已补上 `reference_dance_qa`，用 FFmpeg + Pillow + numpy 做 motion / continuity 评分，不依赖 OpenCV。
+- `reference-dance` pipeline 的 review stage 现在要求这个 QA 工具，避免只靠黑帧、ffprobe 和人工感觉判断舞蹈好坏。
+- `reference_dance_h3_plan` 已把 `quality_gate` 写进 planned GenerationAttempt，和 review 侧共用同一套门槛。
+- 当前锁定的 one-shot 成片在新 QA 下得到 `motion_score = 0.687066`、`continuity_score = 1.0`、`decision = REPAIR`，说明技术上可用，但动作还不够“丝滑”和“有劲”。
+- 如果后续连续两次 H3 都无法跨过 motion pass 线，QA 会把 `comfyui_video` + Wan 2.2 作为“建议兜底”，但不会自动切模型。

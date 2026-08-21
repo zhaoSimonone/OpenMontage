@@ -476,5 +476,13 @@ class ReferenceDanceH3Plan(BaseTool):
                 "has_reference_video": bool(inputs.get("reference_video_url")),
                 "has_reference_audio": bool(inputs.get("reference_audio_url")),
                 "paid_generation_submitted": False,
+                "quality_gate": {
+                    "motion_score_threshold": 0.70,
+                    "motion_regenerate_threshold": 0.55,
+                    "continuity_score_threshold": 0.70,
+                    "continuity_repair_threshold": 0.65,
+                    "failed_motion_attempts_before_fallback": 2,
+                    "priority_order": ["motion", "continuity", "identity", "beauty"],
+                },
             },
         }
