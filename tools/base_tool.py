@@ -57,7 +57,17 @@ def _load_dotenv() -> None:
                 os.environ[key] = value
 
 
+def _augment_path_with_common_tool_dirs() -> None:
+    """Make common macOS package-manager binaries visible to tool checks."""
+    path_parts = [part for part in os.environ.get("PATH", "").split(os.pathsep) if part]
+    for candidate in ("/opt/homebrew/bin", "/usr/local/bin"):
+        if Path(candidate).is_dir() and candidate not in path_parts:
+            path_parts.append(candidate)
+    os.environ["PATH"] = os.pathsep.join(path_parts)
+
+
 _load_dotenv()
+_augment_path_with_common_tool_dirs()
 
 
 class ToolTier(str, Enum):
