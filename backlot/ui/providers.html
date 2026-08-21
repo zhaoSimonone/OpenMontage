@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backlot - Providers</title>
+<link rel="stylesheet" href="/ui/board.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="slate">
+    <div class="clapper"></div>
+    <div>
+      <span class="wordmark">Backlot</span>
+      <h1>Providers</h1>
+    </div>
+    <span class="chip" id="providerCount"></span>
+    <a class="nav-pill" href="/">Library</a>
+    <button class="nav-pill" id="refreshProviders" type="button">Refresh</button>
+    <div class="spacer"></div>
+    <span class="live idle"><span class="dot"></span><span id="providerStatus">READ ONLY</span></span>
+  </header>
+
+  <section class="panel provider-overview">
+    <div class="panel-head">
+      <h2>At a glance</h2>
+      <span class="meta" id="overviewMeta"></span>
+    </div>
+    <div class="panel-body">
+      <div class="provider-overview-grid" id="overview"></div>
+      <div class="provider-runtime" id="runtime"></div>
+    </div>
+  </section>
+
+  <div class="provider-layout">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Ready now</h2>
+        <span class="meta" id="readyCount"></span>
+      </div>
+      <div class="panel-body">
+        <div class="provider-list" id="readyList"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Keys to set</h2>
+        <span class="meta" id="envCount"></span>
+      </div>
+      <div class="panel-body">
+        <div class="provider-list" id="envGrid"></div>
+      </div>
+    </section>
+  </div>
+
+  <details class="panel provider-advanced">
+    <summary class="panel-head">
+      <h2>Advanced inventory</h2>
+      <span class="meta">capability coverage</span>
+    </summary>
+    <div class="panel-body">
+      <div class="provider-summary" id="summary"></div>
+    </div>
+  </details>
+</div>
+<script type="module" src="/ui/providers.js"></script>
+</body>
+</html>

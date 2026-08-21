@@ -109,6 +109,37 @@ class TestBacklotServerApi:
         assert state_body["title"] == "Film"
         assert state_body["stages"]
 
+    def test_providers_page_and_api(self, client, monkeypatch):
+        monkeypatch.setattr(
+            server_mod,
+            "_providers_snapshot",
+            lambda: {
+                "totals": {"configured_tools": 1, "total_tools": 2, "missing_tools": 1},
+                "capabilities": [],
+                "composition_runtimes": {},
+                "runtime_warnings": [],
+                "setup_offers": [],
+                "env_offers": [],
+                "tools": [],
+            },
+        )
+
+        page = client.get("/providers")
+        assert page.status_code == 200
+        assert "providers.js" in page.text
+
+        api = client.get("/api/providers")
+        assert api.status_code == 200
+        assert api.json()["totals"]["configured_tools"] == 1
+
+    def test_env_status_never_returns_secret_values(self, monkeypatch):
+        monkeypatch.setenv("BACKLOT_TEST_SECRET", "super-secret-value")
+
+        status = server_mod._env_status(["BACKLOT_TEST_SECRET"])
+
+        assert status == [{"name": "BACKLOT_TEST_SECRET", "configured": True}]
+        assert "super-secret-value" not in json.dumps(status)
+
     @pytest.mark.parametrize(
         ("url", "status"),
         [

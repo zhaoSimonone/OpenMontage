@@ -12,7 +12,7 @@ import json
 import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
@@ -108,6 +108,93 @@ def _cached_summaries() -> list[dict]:
     return summaries
 
 
+def _env_status(names: list[str]) -> list[dict[str, Any]]:
+    return [
+        {"name": name, "configured": bool(_os.environ.get(name))}
+        for name in names
+    ]
+
+
+def _providers_snapshot() -> dict[str, Any]:
+    """Return provider status for the read-only Backlot providers page.
+
+    This intentionally reports presence/absence of env vars only. It never
+    returns the secret values loaded from .env or the process environment.
+    """
+    from tools.tool_registry import registry
+
+    registry.discover()
+    summary = registry.provider_menu_summary()
+    menu = registry.provider_menu()
+
+    tools: list[dict[str, Any]] = []
+    for capability, bucket in menu.items():
+        entries = list(bucket.get("available", [])) + list(bucket.get("unavailable", []))
+        for entry in entries:
+            env_vars = sorted({
+                dep[4:]
+                for dep in entry.get("dependencies", [])
+                if isinstance(dep, str) and dep.startswith("env:")
+            })
+            tools.append({
+                "capability": capability,
+                "name": entry.get("name"),
+                "provider": entry.get("provider"),
+                "runtime": entry.get("runtime"),
+                "status": entry.get("status"),
+                "best_for": entry.get("best_for") or "",
+                "env_vars": _env_status(env_vars),
+                "install_instructions": entry.get("install_instructions") or "",
+            })
+
+    tools.sort(key=lambda item: (
+        item.get("capability") or "",
+        item.get("status") != "available",
+        item.get("provider") or "",
+        item.get("name") or "",
+    ))
+
+    configured = sum(1 for item in tools if item.get("status") == "available")
+    env_offers: dict[str, list[dict[str, Any]]] = {}
+    for offer in summary.get("setup_offers", []):
+        names = offer.get("env_vars") or []
+        if not names:
+            names = [
+                dep[4:]
+                for dep in offer.get("dependencies", [])
+                if isinstance(dep, str) and dep.startswith("env:")
+            ]
+        for name in names:
+            env_offers.setdefault(name, []).append({
+                "capability": offer.get("capability"),
+                "tool": offer.get("tool"),
+                "provider": offer.get("provider"),
+                "runtime": offer.get("runtime"),
+            })
+
+    return {
+        "generated_at": time.time(),
+        "composition_runtimes": summary.get("composition_runtimes", {}),
+        "runtime_warnings": summary.get("runtime_warnings", []),
+        "capabilities": summary.get("capabilities", []),
+        "setup_offers": summary.get("setup_offers", []),
+        "env_offers": [
+            {
+                "name": name,
+                "configured": bool(_os.environ.get(name)),
+                "unlocks": unlocks,
+            }
+            for name, unlocks in sorted(env_offers.items())
+        ],
+        "tools": tools,
+        "totals": {
+            "configured_tools": configured,
+            "total_tools": len(tools),
+            "missing_tools": len(tools) - configured,
+        },
+    }
+
+
 # Watch-loop hot path: pure string comparison, no per-path filesystem calls
 # (change batches can be thousands of paths during a render).
 import os as _os
@@ -174,6 +261,10 @@ def create_app() -> FastAPI:
     @app.get("/api/projects")
     async def projects() -> list:
         return await asyncio.to_thread(_cached_summaries)
+
+    @app.get("/api/providers")
+    async def providers() -> dict:
+        return await asyncio.to_thread(_providers_snapshot)
 
     @app.get("/api/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:
@@ -289,6 +380,10 @@ def create_app() -> FastAPI:
     async def library_page() -> HTMLResponse:
         return _ui_html("index.html", ("board.css", "library.js"))
 
+    @app.get("/providers")
+    async def providers_page() -> HTMLResponse:
+        return _ui_html("providers.html", ("board.css", "providers.js"))
+
     if UI_DIR.is_dir():
         app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
@@ -300,7 +395,7 @@ def create_app() -> FastAPI:
     async def ui_no_cache(request, call_next):
         response = await call_next(request)
         path = request.url.path
-        if path == "/" or path.startswith("/ui") or path.startswith("/p/"):
+        if path in {"/", "/providers"} or path.startswith("/ui") or path.startswith("/p/"):
             response.headers["Cache-Control"] = "no-cache"
         return response
 

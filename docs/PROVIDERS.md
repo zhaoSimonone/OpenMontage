@@ -57,6 +57,7 @@ KLING_API_BASE_URL=          # Optional; default https://api-singapore.klingai.c
 
 # VIDEO
 HEYGEN_API_KEY=              # HeyGen avatar video gateway
+MINIMAX_H3_API_KEY=          # MiniMax-H3 video via metaso.cn proxy
 RUNWAY_API_KEY=              # Runway Gen-4 video (direct)
 SUNO_API_KEY=                # Suno music generation
 
@@ -148,6 +149,40 @@ The default `req_key` for text-to-video is `jimeng_t2v_v30`; image-to-video defa
 | Model | Price |
 |------|-------|
 | Jimeng 3.0 Pro (video) | ~$0.05/sec (check Volcengine console for actual rate) |
+
+---
+
+### MiniMax-H3 - Video Generation via metaso.cn
+
+> **MiniMax-H3 V2 API through the metaso.cn proxy.** Supports text-to-video, first/last-frame image-to-video, and multimodal reference-guided video using image, video, and audio URLs. Useful as an alternate high-quality route when Seedance or Kling are blocked.
+
+**Tools unlocked:** `minimax_h3_video`
+**Env var:** `MINIMAX_H3_API_KEY`
+
+#### Setup
+
+1. Add your metaso MiniMax proxy bearer token to `.env`: `MINIMAX_H3_API_KEY=...`
+2. Optional: set `MINIMAX_H3_API_BASE=...` if the proxy endpoint changes. Default is `https://metaso.cn/api/minimax`.
+
+#### What it's best for
+
+- MiniMax-H3 768P or 2K short video generation
+- 9:16 vertical social clips with explicit aspect ratio
+- Reference-guided generation from CDN-hosted images, videos, and audio
+- First-frame / last-frame control for short character motion shots
+
+#### API notes
+
+MiniMax-H3 uses the V2 task lifecycle: `POST /v2/video_generation` returns `task_id`, then `GET /v2/query/video_generation/{task_id}` returns the task status and generated `task.content.url`.
+
+The provider sends a required `content` array. Text-to-video contains only a text item and must use a concrete `ratio` such as `9:16`; image-to-video uses `first_frame` / `last_frame` roles and lets the input image determine ratio; multimodal reference mode uses `reference_image`, `reference_video`, and `reference_audio` roles and can explicitly request `9:16`.
+
+#### Pricing
+
+| Model | Price |
+|------|-------|
+| MiniMax-H3 768P | ~$0.08/sec |
+| MiniMax-H3 2K | ~$0.13/sec |
 
 ---
 
@@ -511,6 +546,27 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 > **Note:** DALL-E 2/3 were shut down by OpenAI on 2026-05-12, and the `gpt-image-1` family (`gpt-image-1-mini`, `gpt-image-1.5`) retires 2026-12-01 — `gpt-image-2` is OpenAI's recommended replacement ([deprecations](https://developers.openai.com/api/docs/deprecations)).
 
 **Free tier:** None. Requires prepaid billing. Previously offered $5 in free credits for new accounts (discontinued for most signups).
+
+---
+
+### Hairfree — GPT Image 2 Gateway
+
+> **OpenAI-compatible proxy.** Use this when you want the GPT Image 2 image API surface through hairfree.work instead of the direct OpenAI endpoint.
+
+**Tools unlocked:** `hairfree_image`
+**Env var:** `HAIRFREE_API_KEY`
+
+#### Setup
+
+1. Create or sign in to your hairfree.work account
+2. Add your bearer token to `.env`: `HAIRFREE_API_KEY=...`
+3. Call `hairfree_image` the same way you would call GPT Image 2
+
+#### Notes
+
+- Model defaults to `gpt-image-2`
+- Request fields follow the OpenAI image-generation shape: `prompt`, `size`, `quality`, `n`
+- Billing and limits depend on the hairfree proxy account, not the direct OpenAI key
 
 ---
 
@@ -929,8 +985,10 @@ These tools require only FFmpeg or Python packages — no GPU, no API key.
 | **Google** | `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) | `google_tts`, `google_imagen`, `google_music`, `gemini_omni_video`, `veo_video` | Free tier (TTS) + paid |
 | **ElevenLabs** | `ELEVENLABS_API_KEY` | `elevenlabs_tts`, `music_gen` | Free tier + paid |
 | **fal.ai** | `FAL_KEY` | `flux_image`, `recraft_image`, `kling_video`, `veo_video`, `minimax_video` | Pay-as-you-go |
+| **MiniMax-H3 (metaso)** | `MINIMAX_H3_API_KEY` | `minimax_h3_video` | Pay-as-you-go |
 | **Kling Official** | `KLING_API_KEY` | `kling_official_video`, `kling_official_image`, `kling_tts`, `kling_avatar`, `kling_lip_sync` | Pay-as-you-go |
 | **OpenAI** | `OPENAI_API_KEY` | `openai_tts`, `openai_image` | Paid only |
+| **Hairfree** | `HAIRFREE_API_KEY` | `hairfree_image` | Depends on hairfree plan |
 | **xAI** | `XAI_API_KEY` | `grok_image`, `grok_video` | Paid only |
 | **Runway** | `RUNWAY_API_KEY` | `runway_video` | Free trial + paid |
 | **Higgsfield** | `HIGGSFIELD_API_KEY` + `HIGGSFIELD_API_SECRET` | `higgsfield_video` | Subscription ($15-84/mo) |
@@ -948,8 +1006,8 @@ How many providers cover each capability:
 
 | Capability | Cloud Providers | Local Providers | Free Options |
 |-----------|----------------|-----------------|--------------|
-| **Image Generation** | FLUX, Kling Official, Grok, Google Imagen, GPT Image 2, Recraft | Local Diffusion | Pexels, Pixabay (stock) |
-| **Video Generation** | Grok, Kling Official, Kling via fal.ai, Runway, Veo, Gemini Omni, Higgsfield, MiniMax, HeyGen | WAN, Hunyuan, CogVideo, LTX | Pexels, Pixabay (stock) |
+| **Image Generation** | FLUX, Kling Official, Grok, Google Imagen, GPT Image 2 (OpenAI, Hairfree), Recraft | Local Diffusion | Pexels, Pixabay (stock) |
+| **Video Generation** | Grok, Kling Official, Kling via fal.ai, Runway, Veo, Gemini Omni, Higgsfield, MiniMax, MiniMax-H3, HeyGen | WAN, Hunyuan, CogVideo, LTX | Pexels, Pixabay (stock) |
 | **Text-to-Speech** | ElevenLabs, Google TTS, Kling Official, OpenAI | Piper | Piper, Google free tier, ElevenLabs free tier |
 | **Music Generation** | ElevenLabs, Suno, Google Lyria | — | ElevenLabs free tier |
 | **Post-Production** | — | FFmpeg (compose, stitch, trim, mix, enhance, grade) | All free |

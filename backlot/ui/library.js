@@ -27,7 +27,10 @@ function renderThemeToggle() {
 }
 
 applyTheme(currentTheme);
-document.getElementById("liveBadge").before(renderThemeToggle());
+document.getElementById("liveBadge").before(
+  el("a", { class: "nav-pill", href: "/providers" }, "Providers"),
+  renderThemeToggle(),
+);
 
 function miniRail(states) {
   const rail = el("div", { class: "mini-rail" });

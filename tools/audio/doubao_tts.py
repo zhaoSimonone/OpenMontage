@@ -100,6 +100,31 @@ class DoubaoTTS(BaseTool):
                 "maximum": 100,
                 "description": "Doubao speech rate. 0=normal, 100=2x, -50=0.5x.",
             },
+            "loudness_rate": {
+                "type": "integer",
+                "default": 0,
+                "minimum": -50,
+                "maximum": 100,
+                "description": "Doubao loudness adjustment. 0=normal.",
+            },
+            "pitch": {
+                "type": "integer",
+                "default": 0,
+                "minimum": -12,
+                "maximum": 12,
+                "description": "Doubao pitch_rate adjustment. 0=normal.",
+            },
+            "emotion": {
+                "type": "string",
+                "description": "Optional emotion tag for voices that support emotion control, e.g. happy, sad, surprised, excited, neutral.",
+            },
+            "emotion_scale": {
+                "type": "number",
+                "default": 4,
+                "minimum": 1,
+                "maximum": 5,
+                "description": "Emotion strength for voices that support emotion control.",
+            },
             "enable_timestamp": {
                 "type": "boolean",
                 "default": True,
@@ -157,7 +182,17 @@ class DoubaoTTS(BaseTool):
         backoff_seconds=2.0,
         retryable_errors=["timeout", "rate_limit", "quota exceeded for types: concurrency"],
     )
-    idempotency_key_fields = ["text", "voice_id", "resource_id", "speech_rate", "sample_rate"]
+    idempotency_key_fields = [
+        "text",
+        "voice_id",
+        "resource_id",
+        "speech_rate",
+        "loudness_rate",
+        "pitch",
+        "emotion",
+        "emotion_scale",
+        "sample_rate",
+    ]
     side_effects = [
         "writes audio file to output_path",
         "writes Doubao query metadata JSON next to output_path",
@@ -274,6 +309,10 @@ class DoubaoTTS(BaseTool):
                 "format": fmt,
                 "sample_rate": inputs.get("sample_rate", 24000),
                 "speech_rate": inputs.get("speech_rate", 0),
+                "loudness_rate": inputs.get("loudness_rate", 0),
+                "pitch": inputs.get("pitch", 0),
+                "emotion": inputs.get("emotion"),
+                "emotion_scale": inputs.get("emotion_scale"),
                 "text_length": len(text),
                 "task_id": task_id,
                 "task_status": data.get("task_status"),
@@ -314,8 +353,14 @@ class DoubaoTTS(BaseTool):
             "format": inputs.get("format", "mp3"),
             "sample_rate": inputs.get("sample_rate", 24000),
             "speech_rate": inputs.get("speech_rate", 0),
+            "loudness_rate": inputs.get("loudness_rate", 0),
+            "pitch_rate": inputs.get("pitch", 0),
             "enable_timestamp": bool(inputs.get("enable_timestamp", True)),
         }
+        if inputs.get("emotion"):
+            audio_params["emotion"] = inputs["emotion"]
+            audio_params["enable_emotion"] = True
+            audio_params["emotion_scale"] = inputs.get("emotion_scale", 4)
         additions = {
             "disable_markdown_filter": bool(inputs.get("disable_markdown_filter", False)),
         }
