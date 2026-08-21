@@ -1,0 +1,179 @@
+name: reference-dance
+version: "0.1"
+description: >
+  Reference-driven two-person dance workflow. It binds character/wardrobe assets,
+  compiles a MiniMax-H3 request with subject mapping and camera lock, logs each
+  generation attempt, and gates paid generation behind human approval.
+category: custom
+stability: beta
+default_checkpoint_policy: guided
+
+reference_input:
+  supported: true
+  analysis_depth: deep
+  analysis_tools:
+    - video_analyzer
+    - scene_detect
+    - frame_sampler
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/reference-dance/executive-producer
+  budget_default_usd: 2.00
+  max_revisions_per_stage: 3
+  max_send_backs: 3
+  max_wall_time_minutes: 12
+
+extensions:
+  custom_scripts: false
+  custom_playbooks: true
+  custom_skills: true
+  custom_tools: false
+
+required_skills:
+  - pipelines/reference-dance/executive-producer
+  - pipelines/reference-dance/ingest-director
+  - pipelines/reference-dance/bind-assets-director
+  - pipelines/reference-dance/plan-generation-director
+  - pipelines/reference-dance/generate-director
+  - pipelines/reference-dance/review-director
+  - pipelines/reference-dance/compose-director
+  - meta/reviewer
+  - meta/checkpoint-protocol
+
+compatible_playbooks:
+  recommended:
+    - flat-motion-graphics
+  also_works:
+    - clean-professional
+  custom_allowed: true
+
+stages:
+  - name: ingest
+    skill: pipelines/reference-dance/ingest-director
+    produces:
+      - reference_dance_ingest
+    tools_available:
+      - video_analyzer
+      - scene_detect
+      - frame_sampler
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Correct reference video is locked
+      - Target duration, aspect ratio, and provider are explicit
+      - Non-target storylines are excluded
+    success_criteria:
+      - Ingest artifact names the project, reference video, target duration, and 9:16 output
+      - Reference video has a local path or CDN URL
+
+  - name: bind_assets
+    skill: pipelines/reference-dance/bind-assets-director
+    required_artifacts_in:
+      - reference_dance_ingest
+    produces:
+      - asset_manifest
+      - subject_mapping
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Character 1 and Character 2 are mapped to reference performers
+      - Wardrobe, character identity, and motion reference roles are separated
+      - Asset URLs are provider-ready when required
+    success_criteria:
+      - Subject mapping has left and right performer bindings
+      - Asset manifest includes at least one character/wardrobe reference and one dance reference video
+
+  - name: plan_generation
+    skill: pipelines/reference-dance/plan-generation-director
+    required_artifacts_in:
+      - asset_manifest
+      - subject_mapping
+    produces:
+      - generation_plan
+      - generation_attempts
+      - decision_log
+    required_tools:
+      - reference_dance_h3_plan
+    tools_available:
+      - reference_dance_h3_plan
+      - video_selector
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - MiniMax-H3 request is reviewable before paid generation
+      - Subject mapping and camera lock are in the prompt
+      - One-shot 15s is preferred when provider duration allows
+      - Estimated cost is visible
+    success_criteria:
+      - H3 request JSON validates locally
+      - GenerationAttempt is logged with status planned
+      - No paid generation has been submitted
+
+  - name: generate
+    skill: pipelines/reference-dance/generate-director
+    required_artifacts_in:
+      - generation_plan
+      - generation_attempts
+    produces:
+      - asset_manifest
+      - generation_attempts
+    required_tools:
+      - minimax_h3_video
+    tools_available:
+      - minimax_h3_video
+      - video_selector
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Paid generation was explicitly approved before submission
+      - Provider/model did not silently change
+      - Output video path and provider response are recorded
+    success_criteria:
+      - Generated video asset exists on disk
+      - Attempt log records task id, output path, cost, and status
+
+  - name: review
+    skill: pipelines/reference-dance/review-director
+    required_artifacts_in:
+      - asset_manifest
+      - generation_attempts
+    produces:
+      - continuity_report
+      - final_review
+    tools_available:
+      - frame_sampler
+      - video_analyzer
+      - visual_qa
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Dance motion is not judged by container validity alone
+      - Full-body framing and side placement are preserved
+      - Stiffness, lower-body motion, and camera drift are reviewed
+    success_criteria:
+      - Review artifact includes motion, identity, camera, and continuity notes
+      - Failing motion quality recommends regenerate rather than cosmetic stitching
+
+  - name: compose
+    skill: pipelines/reference-dance/compose-director
+    required_artifacts_in:
+      - asset_manifest
+      - final_review
+    produces:
+      - edit_decisions
+      - render_report
+    tools_available:
+      - video_stitch
+      - video_compose
+      - video_trimmer
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Final render preserves approved provider clips
+      - Stitching is only used after continuity approval
+      - Output is 9:16 and platform-ready
+    success_criteria:
+      - Final render exists under projects/<project-id>/renders/
+      - Render report records duration, resolution, codec, and source clips
