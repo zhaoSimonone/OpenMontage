@@ -38,5 +38,5 @@ def test_reference_dance_required_tools_include_p0_planner():
 
     assert "reference_dance_h3_plan" in required
     assert "reference_dance_qa" in required
-    assert "minimax_h3_video" in required
+    assert "reference_dance_video_generate" in required
     assert "video_stitch" in required

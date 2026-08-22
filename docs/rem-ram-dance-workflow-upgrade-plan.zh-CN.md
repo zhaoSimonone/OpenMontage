@@ -496,9 +496,9 @@ boundary:
 - 是否只摆手不跳舞；
 - 是否保持全身入镜。
 
-## 7. P2：DWPose 可选升级
+## 7. P3：DWPose 可选升级
 
-P2 再考虑 DWPose，不要 P0 就上。
+后续再考虑 DWPose，不要在当前 P0/P1/P2 闭环未验证前引入。
 
 用途：
 
@@ -508,24 +508,32 @@ P2 再考虑 DWPose，不要 P0 就上。
 
 DWPose 不可用时必须降级到 Optical Flow Analyzer，不能让整个流程挂掉。
 
-## 8. P3：Wan2.2 Animate / ComfyUI 兜底
+## 8. P2/P3：Wan2.2 / ComfyUI 兜底
 
-P3 才考虑 ComfyUI + Wan2.2 Animate。
+本轮已完成 P2 的路由和审批门；完整的 DWPose / Animate 姿态控制仍属于后续 P3。
 
 定位不是替代 OpenMontage，也不是替代 H3，而是：
 
 ```text
-复杂动作兜底
+复杂动作兜底，不是静默换模型
 ```
 
 触发条件建议：
 
 ```text
 H3 attempt >= 2
-AND motion_score < threshold
+AND motion_score < motion_pass_threshold
+AND QA next_action.kind = consider_fallback_provider
 ```
 
-才允许切到 Wan2.2 Animate。
+满足条件后，QA 只产生 `comfyui_video` + `wan2.2` 建议。生成阶段通过
+`reference_dance_video_generate` 路由器执行，必须额外传入
+`fallback_approved=true` 才会真正切到 ComfyUI；没有人工批准时只写入
+`approval_required` 的 GenerationAttempt，不发起生成。
+
+当前接入的是标准 Wan 2.2 I2V 工作流：它可以保留人物参考图并生成竖屏动作，
+但不能把参考舞蹈视频当作逐帧姿态控制输入。因此它是动作质量兜底，不是动作
+复刻保证；后续如仍不足，再引入 DWPose / Animate 工作流。
 
 这样可以避免无限烧 H3，也避免过早引入 ComfyUI 的安装和模型复杂度。
 
@@ -606,7 +614,7 @@ P1 完成后应满足：
 - 不复制其他开源项目；
 - 不绕过 pipeline/tool registry 长期维护裸脚本；
 - 不默认换 Seedance；
-- 不默认上 ComfyUI；
+- 不静默切到 ComfyUI；只有 QA 达到触发条件并获得批准时才使用；
 - 不默认安装 Wan2.2 Animate；
 - 不用 crossfade 掩盖姿态突变；
 - 不把技术 QA 当成舞蹈 QA；
@@ -614,13 +622,16 @@ P1 完成后应满足：
 
 ## 12. 推荐下一步
 
-推荐马上执行：
+当前推荐执行：
 
 ```text
-P0-1：修复 ffmpeg / ffprobe
-P0-2：生成 15 秒 one-shot H3 请求 artifact
-P0-3：人工 review 请求
-P0-4：确认后再付费生成
+继续以 MiniMax-H3 作为主模型生成候选
+↓
+reference_dance_qa 评分 motion / continuity
+↓
+连续两次 motion 未过线时，向用户展示 Wan 2.2 / ComfyUI 回退选项
+↓
+用户明确批准后，才执行 reference_dance_video_generate 的回退路径
 ```
 
 这样风险最低，也最符合当前目标：继续使用 MiniMax-H3，但让它在更严格的舞蹈生产工作流里发挥到上限。
@@ -631,4 +642,6 @@ P0-4：确认后再付费生成
 - `reference-dance` pipeline 的 review stage 现在要求这个 QA 工具，避免只靠黑帧、ffprobe 和人工感觉判断舞蹈好坏。
 - `reference_dance_h3_plan` 已把 `quality_gate` 写进 planned GenerationAttempt，和 review 侧共用同一套门槛。
 - 当前锁定的 one-shot 成片在新 QA 下得到 `motion_score = 0.687066`、`continuity_score = 1.0`、`decision = REPAIR`，说明技术上可用，但动作还不够“丝滑”和“有劲”。
-- 如果后续连续两次 H3 都无法跨过 motion pass 线，QA 会把 `comfyui_video` + Wan 2.2 作为“建议兜底”，但不会自动切模型。
+- 已新增 `reference_dance_video_generate`：默认委托 `minimax_h3_video`，读取 QA 的 `next_action`，并在触发回退时强制等待 `fallback_approved=true`。
+- 已接入 `comfyui_video` 的 Wan 2.2 竖屏 I2V 参数映射（9:16、15 秒、240 帧）和新的 GenerationAttempt 日志；标准 I2V 不宣称具备逐帧舞蹈姿态控制。
+- 如果后续连续两次 H3 都无法跨过 motion pass 线，QA 会把 `comfyui_video` + Wan 2.2 作为建议；只有人工批准后才真正执行。

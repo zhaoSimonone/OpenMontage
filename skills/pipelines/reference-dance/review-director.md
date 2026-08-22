@@ -19,7 +19,9 @@ Evaluate dance usefulness, not just technical playability.
 - Use `reference_dance_qa` for motion_score, continuity_score, and seam review.
 - Treat `motion_score < 0.55` as a regenerate signal.
 - Treat `continuity_score < 0.65` as a seam repair signal.
-- If H3 motion fails twice, recommend `comfyui_video` with a Wan 2.2-based workflow, but do not auto-switch.
+- If H3 motion fails twice, emit a fallback recommendation for
+  `reference_dance_video_generate` with `comfyui_video` / Wan 2.2. The next
+  generation attempt must wait for explicit user approval; do not auto-switch.
 
 ## Output
 

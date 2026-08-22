@@ -120,9 +120,11 @@ stages:
       - asset_manifest
       - generation_attempts
     required_tools:
-      - minimax_h3_video
+      - reference_dance_video_generate
     tools_available:
+      - reference_dance_video_generate
       - minimax_h3_video
+      - comfyui_video
       - video_selector
     checkpoint_required: true
     human_approval_default: true
