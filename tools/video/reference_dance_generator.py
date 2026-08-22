@@ -393,6 +393,7 @@ class ReferenceDanceGenerator(BaseTool):
             "cost_estimate_usd": 0.0 if provider == _COMFY_PROVIDER else MiniMaxH3Video().estimate_cost(inputs),
             "actual_cost_usd": provider_result.cost_usd if provider_result else 0.0,
             "latency_seconds": provider_result.duration_seconds if provider_result else None,
+            "error": provider_result.error if provider_result else None,
             "provider_response": data if provider_result else None,
             "fallback": fallback,
             "created_at": datetime.now(timezone.utc).isoformat(),
