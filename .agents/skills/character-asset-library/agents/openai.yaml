@@ -1,0 +1,4 @@
+interface:
+  display_name: "Character Asset Library"
+  short_description: "Consolidate reusable character references safely"
+  default_prompt: "Use $character-asset-library to consolidate reusable character design images across projects without breaking historical references."
