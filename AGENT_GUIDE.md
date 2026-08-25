@@ -698,6 +698,7 @@ The `.agents/skills/` directory is large. When you're not coming in through a to
 | What tools exist for a vendor? | `registry.provider_catalog()` |
 | How does a tool actually work? | the tool's `usage_location` from the registry |
 | How should this pipeline stage behave? | `skills/pipelines/<pipeline>/...` |
+| How should reusable character setting images be centralized? | `skills/meta/character-asset-library.md` |
 | What is the checkpoint/review policy? | `skills/meta/` |
 
 ## What Not To Do

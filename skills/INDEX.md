@@ -283,6 +283,7 @@ Cross-cutting skills that apply to all pipelines:
 | Reviewer | `meta/reviewer.md` | Self-review protocol after every stage |
 | Checkpoint Protocol | `meta/checkpoint-protocol.md` | When/how to checkpoint and request human approval |
 | Skill Creator | `meta/skill-creator.md` | Dynamically create new skills during pipeline runs |
+| Character Asset Library | `meta/character-asset-library.md` | Consolidate reusable character design images across projects without breaking historical paths |
 | Animation Runtime Selector | `meta/animation-runtime-selector.md` | Choose render runtime + animation library per scene |
 | Taste Direction | `meta/taste-direction.md` | Convert a brief into taste dials, anti-patterns, and reference strategy for proposal/playbook/atelier work |
 | Bespoke Composition (Atelier) | `meta/bespoke-composition.md` | Hand-author a composition from scratch (hero work) — no stock scene-types; routes art-direction → motion principles → engine mechanics → atelier render |
