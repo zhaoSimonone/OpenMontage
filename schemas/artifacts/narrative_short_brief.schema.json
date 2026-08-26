@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/narrative_short_brief",
+  "title": "Narrative Short Brief",
+  "type": "object",
+  "required": ["version", "project_id", "source_prompt", "target_duration_seconds", "aspect_ratio", "character_reference", "creative_constraints"],
+  "properties": {
+    "version": {"type": "string", "const": "1.0"},
+    "project_id": {"type": "string"},
+    "title": {"type": "string"},
+    "source_prompt": {"type": "string", "minLength": 1},
+    "target_duration_seconds": {"type": "number", "minimum": 20, "maximum": 45},
+    "aspect_ratio": {"type": "string", "const": "9:16"},
+    "character_reference": {
+      "type": "object",
+      "required": ["source", "canonical_visual_description", "adult_confirmation"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "canonical_visual_description": {"type": "string", "minLength": 1},
+        "adult_confirmation": {"type": "boolean", "const": true},
+        "source_of_truth_notes": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "creative_constraints": {
+      "type": "object",
+      "required": ["pov", "visible_people", "negative_constraints"],
+      "properties": {
+        "pov": {"type": "string", "const": "adult_male_first_person"},
+        "visible_people": {"type": "integer", "const": 1},
+        "negative_constraints": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      },
+      "additionalProperties": false
+    },
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": false
+}

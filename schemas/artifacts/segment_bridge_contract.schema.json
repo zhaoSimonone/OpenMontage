@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/segment_bridge_contract",
+  "title": "Segment Bridge Contract",
+  "type": "object",
+  "required": ["version", "project_id", "target_duration_seconds", "segments", "joins"],
+  "properties": {
+    "version": {"type": "string", "const": "1.0"},
+    "project_id": {"type": "string"},
+    "target_duration_seconds": {"type": "number", "minimum": 20, "maximum": 45},
+    "segments": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["id", "start_seconds", "end_seconds", "purpose", "state"],
+        "properties": {
+          "id": {"type": "string"},
+          "start_seconds": {"type": "number", "minimum": 0},
+          "end_seconds": {"type": "number", "minimum": 1},
+          "purpose": {"type": "string"},
+          "state": {
+            "type": "object",
+            "required": ["character", "key_prop", "emotion", "camera"],
+            "properties": {
+              "character": {"type": "string"},
+              "key_prop": {"type": "string"},
+              "emotion": {"type": "string"},
+              "camera": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "joins": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "semantic_bridge", "visual_lock", "transition", "audio_policy"],
+        "properties": {
+          "from": {"type": "string"},
+          "to": {"type": "string"},
+          "semantic_bridge": {
+            "type": "object",
+            "required": ["kind", "bridge_prop", "from_action", "to_action"],
+            "properties": {
+              "kind": {"type": "string"},
+              "bridge_prop": {"type": "string"},
+              "from_action": {"type": "string"},
+              "to_action": {"type": "string"}
+            },
+            "additionalProperties": false
+          },
+          "visual_lock": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "transition": {
+            "type": "object",
+            "required": ["type", "duration_seconds"],
+            "properties": {
+              "type": {"type": "string", "enum": ["cut", "crossfade", "fade"]},
+              "duration_seconds": {"type": "number", "minimum": 0, "maximum": 1}
+            },
+            "additionalProperties": false
+          },
+          "audio_policy": {
+            "type": "object",
+            "required": ["narration_continues", "music_crossfades", "room_tone_continues"],
+            "properties": {
+              "narration_continues": {"type": "boolean"},
+              "music_crossfades": {"type": "boolean"},
+              "room_tone_continues": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": false
+}

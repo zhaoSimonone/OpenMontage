@@ -1,0 +1,227 @@
+name: narrative-short
+version: "0.1"
+description: >
+  Reference-image-led vertical narrative short workflow. It plans a two-segment
+  story, locks character identity, uses a semantic bridge between H3 clips, and
+  builds controlled voice, music, subtitles, and QA artifacts.
+category: custom
+stability: beta
+default_checkpoint_policy: guided
+
+reference_input:
+  supported: true
+  analysis_depth: standard
+  analysis_tools:
+    - visual_qa
+    - video_analyzer
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/narrative-short/executive-producer
+  budget_default_usd: 3.00
+  max_revisions_per_stage: 2
+  max_send_backs: 2
+  max_wall_time_minutes: 30
+
+extensions:
+  custom_scripts: false
+  custom_playbooks: true
+  custom_skills: true
+  custom_tools: true
+
+required_skills:
+  - pipelines/narrative-short/executive-producer
+  - pipelines/narrative-short/intake-director
+  - pipelines/narrative-short/story-plan-director
+  - pipelines/narrative-short/bridge-contract-director
+  - pipelines/narrative-short/plan-generation-director
+  - pipelines/narrative-short/generate-director
+  - pipelines/narrative-short/audio-post-director
+  - pipelines/narrative-short/review-director
+  - pipelines/narrative-short/compose-director
+  - meta/reviewer
+  - meta/checkpoint-protocol
+
+compatible_playbooks:
+  recommended:
+    - clean-professional
+  also_works:
+    - minimalist-diagram
+  custom_allowed: true
+
+stages:
+  - name: intake
+    skill: pipelines/narrative-short/intake-director
+    produces:
+      - narrative_short_brief
+      - asset_manifest
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - User prompt and supplied image are preserved as source input
+      - Character source-of-truth conflicts are explicitly resolved
+      - Target is an approximately 30-second vertical narrative short
+    success_criteria:
+      - Brief identifies the protagonist POV rule, visible character count, and safety constraints
+      - Asset manifest contains one canonical character reference
+
+  - name: story_plan
+    skill: pipelines/narrative-short/story-plan-director
+    required_artifacts_in:
+      - narrative_short_brief
+      - asset_manifest
+    produces:
+      - script
+      - scene_plan
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Story completes one emotional arc in two 15-second segments
+      - Each segment has one primary action and one terminal state
+      - No action requires impossible frame-accurate continuation
+    success_criteria:
+      - Script is timestamped for approximately 30 seconds
+      - Scene plan contains exactly two generated character scenes
+
+  - name: bridge_contract
+    skill: pipelines/narrative-short/bridge-contract-director
+    required_artifacts_in:
+      - script
+      - scene_plan
+    produces:
+      - segment_bridge_contract
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - A single prop or cause-effect action bridges the two segments
+      - Camera, wardrobe, identity, and sound continuity are explicit
+      - Cut point is a narrative pause rather than a complex motion continuation
+    success_criteria:
+      - Bridge contract validates and names both shots
+      - Transition and cross-segment audio policies are explicit
+
+  - name: plan_generation
+    skill: pipelines/narrative-short/plan-generation-director
+    required_artifacts_in:
+      - narrative_short_brief
+      - script
+      - scene_plan
+      - segment_bridge_contract
+    produces:
+      - generation_attempts
+      - decision_log
+    required_tools:
+      - narrative_short_h3_plan
+    tools_available:
+      - tencent_cos_upload
+      - narrative_short_h3_plan
+      - minimax_h3_video
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Both requests use the same canonical reference image and MiniMax-H3
+      - H3 prompt includes identity lock, POV rule, terminal/initial bridge state, and negatives
+      - Request JSON and cost estimate are visible before paid generation
+    success_criteria:
+      - Two planned GenerationAttempt artifacts exist
+      - Every local reference image has a verified provider-ready URL before request compilation
+      - No paid task has been submitted
+
+  - name: generate
+    skill: pipelines/narrative-short/generate-director
+    required_artifacts_in:
+      - generation_attempts
+    produces:
+      - asset_manifest
+      - generation_attempts
+    required_tools:
+      - narrative_short_video_generate
+    tools_available:
+      - narrative_short_video_generate
+      - minimax_h3_video
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Only the approved third-party MiniMax-H3 provider is used
+      - A failed segment does not cause unrelated segments to regenerate
+      - Task id, output path, duration, and cost are captured per attempt
+    success_criteria:
+      - Two generated clips exist under the project workspace
+      - Generation attempts record provider responses and terminal status
+
+  - name: audio_post
+    skill: pipelines/narrative-short/audio-post-director
+    required_artifacts_in:
+      - script
+      - asset_manifest
+    produces:
+      - audio_timeline
+    tools_available:
+      - dashscope_tts
+      - doubao_tts
+      - audio_mixer
+      - subtitle_gen
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Voice is sampled before full synthesis when a TTS provider is used
+      - Narration and music cross the visual seam continuously
+      - Subtitles derive from the approved script and known timestamps
+    success_criteria:
+      - Audio timeline has speech, ambience, music, and subtitle timing entries
+      - Selected TTS settings are recorded in decision_log
+
+  - name: review
+    skill: pipelines/narrative-short/review-director
+    required_artifacts_in:
+      - asset_manifest
+      - segment_bridge_contract
+      - audio_timeline
+    produces:
+      - review
+      - final_review
+    required_tools:
+      - narrative_short_qa
+    tools_available:
+      - narrative_short_qa
+      - visual_qa
+      - video_analyzer
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Character, wardrobe, prop, and POV consistency are checked on review frames
+      - The join is technically and narratively ready before final compose
+      - Audio and subtitle paths are usable before final render
+    success_criteria:
+      - QA report includes per-clip probe, seam readiness, and manual review frames
+      - Any failed clip is identified without ambiguity
+
+  - name: compose
+    skill: pipelines/narrative-short/compose-director
+    required_artifacts_in:
+      - asset_manifest
+      - audio_timeline
+      - final_review
+    produces:
+      - edit_decisions
+      - render_report
+    required_tools:
+      - video_stitch
+      - audio_mixer
+    tools_available:
+      - video_stitch
+      - video_compose
+      - audio_mixer
+      - subtitle_gen
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Final render remains vertical and approximately 30 seconds
+      - The planned transition and continuous audio bridge are preserved
+      - Subtitle legibility does not obstruct the character
+    success_criteria:
+      - Final render exists under projects/<project-id>/renders/
+      - Render report records source clips, audio mix, subtitle path, and output specs
