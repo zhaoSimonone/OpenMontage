@@ -1,7 +1,7 @@
 name: reference-dance
 version: "0.1"
 description: >
-  Reference-driven two-person dance workflow. It binds character/wardrobe assets,
+  Reference-driven dance workflow for one or two visible characters. It binds character/wardrobe assets,
   compiles a MiniMax-H3 request with subject mapping and camera lock, logs each
   generation attempt, and gates paid generation behind human approval.
 category: custom

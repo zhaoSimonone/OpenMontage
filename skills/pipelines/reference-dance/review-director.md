@@ -6,10 +6,10 @@ Evaluate dance usefulness, not just technical playability.
 
 ## Checks
 
-- Exactly two adult fictional women are visible.
-- Character 1 stays left / slightly forward.
-- Character 2 stays right / half step behind.
-- Both bodies and both feet stay visible.
+- Exactly the number of target characters declared in `performance_mode` are visible.
+- In two-character mode, Character 1 stays left / slightly forward and Character 2 stays right / half step behind.
+- In single-character mode, the one target performer stays centered.
+- Every target body and both feet stay visible.
 - Camera remains locked and full-body.
 - Hands are natural.
 - Lower body has weight transfer.

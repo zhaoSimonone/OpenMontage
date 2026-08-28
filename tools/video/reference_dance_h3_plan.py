@@ -61,7 +61,7 @@ class ReferenceDanceH3Plan(BaseTool):
         "generation_attempt_log": True,
     }
     best_for = [
-        "compiling two-character reference-dance prompts for MiniMax-H3",
+        "compiling one- or two-character reference-dance prompts for MiniMax-H3",
         "creating reviewable H3 request JSON before paid generation",
         "logging planned GenerationAttempt metadata for continuity",
     ]
@@ -77,6 +77,12 @@ class ReferenceDanceH3Plan(BaseTool):
             "project_id": {"type": "string"},
             "shot_id": {"type": "string", "default": "shot_001"},
             "attempt_id": {"type": "string", "default": "attempt_001"},
+            "performance_mode": {
+                "type": "string",
+                "enum": ["two_character", "single_character"],
+                "default": "two_character",
+                "description": "Whether the target performance has one or two visible characters.",
+            },
             "duration": {"type": "integer", "minimum": 4, "maximum": 15, "default": 15},
             "ratio": {"type": "string", "enum": ["9:16", "16:9", "1:1"], "default": "9:16"},
             "resolution": {"type": "string", "enum": ["768P", "2K"], "default": "768P"},
@@ -112,6 +118,7 @@ class ReferenceDanceH3Plan(BaseTool):
         "project_id",
         "shot_id",
         "attempt_id",
+        "performance_mode",
         "duration",
         "ratio",
         "resolution",
@@ -253,6 +260,9 @@ class ReferenceDanceH3Plan(BaseTool):
 
     @classmethod
     def _compile_prompt(cls, inputs: dict[str, Any]) -> str:
+        performance_mode = str(inputs.get("performance_mode") or "two_character")
+        if performance_mode not in {"two_character", "single_character"}:
+            raise ValueError("performance_mode must be two_character or single_character")
         c1 = {
             **cls._default_character_1(),
             **(inputs.get("character_1") or {}),
@@ -265,13 +275,90 @@ class ReferenceDanceH3Plan(BaseTool):
             "warm clean indoor hallway or simple dance-practice room, natural daylight, "
             "soft cinematic color, realistic skin texture and matte hair strands"
         )
-        wardrobe = inputs.get("wardrobe") or (
-            "fashion-forward dance-friendly outfits: cropped or short soft blazer, clean white blouse, "
-            "slim black tie, high-waisted wide-leg trousers, and clean white sneakers; "
-            "pastel light-blue accents for Character 1 and pastel light-pink accents for Character 2"
-        )
-        choreography_beats = inputs.get("choreography_beats") or cls._default_choreography_beats()
+        if inputs.get("wardrobe"):
+            wardrobe = str(inputs["wardrobe"])
+        elif performance_mode == "single_character":
+            wardrobe = (
+                "Keep the exact black-purple gothic outfit from the supplied character image throughout: "
+                "black and deep-purple gothic dress with gold trim, layered skirt, fitted but fully covered "
+                "bodice, long blue hair, and white flower hair accessories. Do not transform or change the outfit."
+            )
+        else:
+            wardrobe = (
+                "fashion-forward dance-friendly outfits: cropped or short soft blazer, clean white blouse, "
+                "slim black tie, high-waisted wide-leg trousers, and clean white sneakers; "
+                "pastel light-blue accents for Character 1 and pastel light-pink accents for Character 2"
+            )
+        choreography_beats = inputs.get("choreography_beats")
+        if not choreography_beats:
+            choreography_beats = (
+                cls._default_single_choreography_beats()
+                if performance_mode == "single_character"
+                else cls._default_choreography_beats()
+            )
         negative_constraints = inputs.get("negative_constraints") or cls._default_negative_constraints()
+
+        if performance_mode == "single_character":
+            subject_mapping = (
+                f"The only visible performer is {c1['name']} = {c1['summary']}. "
+                "Keep this one performer centered and fully visible for the entire clip. "
+                "Use the reference video only for choreography, timing, body motion, footwork, "
+                "body-weight transfer, shoulder rhythm, hip rhythm, arm trajectories, head angles, "
+                "facial expressions, eye contact, pauses, and final beat structure. Do not copy the "
+                "reference performer's face, body, clothes, hair, text, watermark, background, or identity."
+            )
+            identity_lock = (
+                "Exactly one fictional adult woman around 20 and no other people. "
+                f"The target performer's appearance: {c1['appearance']}. "
+                "Keep her face, hair, body scale, wardrobe, and identity consistent from beginning to end."
+            )
+            camera_lock = (
+                "Static locked camera. Vertical 9:16 frame. Full-body single-performer shot. "
+                "The performer remains centered with both feet visible for the whole clip. Keep the same "
+                "camera height, crop, distance, and lens feel. No zoom, no push-in, no dolly, no reframing, "
+                "no sudden angle change, no medium shot, no close-up, and no approach-to-camera ending."
+            )
+            choreography_intro = (
+                "Follow the supplied reference dance video's original action order and rhythm for the one "
+                "performer: preserve the exact sequence of hand gestures, head angles, body-weight shifts, "
+                "facial expressions, eye contact, pauses, and body rhythm. Do not redesign or improvise the "
+                "choreography. Keep the movement body-led: knees and weight shift initiate each gesture, "
+                "shoulders and hips carry the rhythm, wrists follow the elbows, and feet remain grounded."
+            )
+            header_subject = "one-person dance video"
+        else:
+            subject_mapping = (
+                f"Character 1 = {c1['name']} = {c1['summary']}. Character 1 always maps to the "
+                "left performer in the reference video and stays left / slightly forward in frame. "
+                f"Character 2 = {c2['name']} = {c2['summary']}. Character 2 always maps to the "
+                "right performer in the reference video and stays right / half a step behind in frame. "
+                "Use the reference video only for choreography, timing, body motion, footwork, "
+                "body-weight transfer, shoulder rhythm, hip rhythm, arm trajectories, relative spacing, "
+                "and final beat structure. Do not copy the reference performers' faces, bodies, clothes, "
+                "masks, background, captions, platform UI, watermark, or exact identity."
+            )
+            identity_lock = (
+                "Exactly two fictional adult young women around 20, no other people. "
+                f"Character 1 appearance: {c1['appearance']}. "
+                f"Character 2 appearance: {c2['appearance']}. "
+                "Keep hair colors, face shapes, side placement, body scale, and personality clearly "
+                "distinct for the entire clip."
+            )
+            camera_lock = (
+                "Static locked camera. Vertical 9:16 frame. Full-body two-shot. Both dancers visible "
+                "together for the whole clip. Both feet remain visible. Keep the same scene, warm daylight, "
+                "camera height, crop, distance, and lens feel. No zoom, no push-in, no dolly, no reframing, "
+                "no handheld wobble that changes framing, no sudden angle change, no medium shot, no close-up, "
+                "and no approach-to-camera ending."
+            )
+            choreography_intro = (
+                "Follow the supplied reference dance video's broad rhythm and blocking: side-by-side spacing, "
+                "playful setup, alternating gestures, tie/collar rhythm, chest-level hand crosses, shoulder hits, "
+                "wide-stance footwork, small half-beat call-and-response, and synchronized ending beats. "
+                "Make the body lead every gesture: knees soften before hands move, hips and shoulders pulse under "
+                "the arms, wrists lag slightly after elbows, and feet keep making grounded adjustments."
+            )
+            header_subject = "two-person dance video"
 
         sections = [
             (
@@ -284,37 +371,16 @@ class ReferenceDanceH3Plan(BaseTool):
             ),
             (
                 "subject_mapping",
-                (
-                    f"Character 1 = {c1['name']} = {c1['summary']}. Character 1 always maps to the "
-                    "left performer in the reference video and stays left / slightly forward in frame. "
-                    f"Character 2 = {c2['name']} = {c2['summary']}. Character 2 always maps to the "
-                    "right performer in the reference video and stays right / half a step behind in frame. "
-                    "Use the reference video only for choreography, timing, body motion, footwork, "
-                    "body-weight transfer, shoulder rhythm, hip rhythm, arm trajectories, relative spacing, "
-                    "and final beat structure. Do not copy the reference performers' faces, bodies, clothes, "
-                    "masks, background, captions, platform UI, watermark, or exact identity."
-                ),
+                subject_mapping,
             ),
             (
                 "identity_lock",
-                (
-                    "Exactly two fictional adult young women around 20, no other people. "
-                    f"Character 1 appearance: {c1['appearance']}. "
-                    f"Character 2 appearance: {c2['appearance']}. "
-                    "Keep hair colors, face shapes, side placement, body scale, and personality clearly "
-                    "distinct for the entire clip."
-                ),
+                identity_lock,
             ),
             ("wardrobe_lock", str(wardrobe)),
             (
                 "camera_lock",
-                (
-                    "Static locked camera. Vertical 9:16 frame. Full-body two-shot. Both dancers visible "
-                    "together for the whole clip. Both feet remain visible. Keep the same scene, warm daylight, "
-                    "camera height, crop, distance, and lens feel. No zoom, no push-in, no dolly, no reframing, "
-                    "no handheld wobble that changes framing, no sudden angle change, no medium shot, no close-up, "
-                    "and no approach-to-camera ending."
-                ),
+                camera_lock,
             ),
             (
                 "scene",
@@ -322,13 +388,7 @@ class ReferenceDanceH3Plan(BaseTool):
             ),
             (
                 "choreography",
-                (
-                    "Follow the supplied reference dance video's broad rhythm and blocking: side-by-side spacing, "
-                    "playful setup, alternating gestures, tie/collar rhythm, chest-level hand crosses, shoulder hits, "
-                    "wide-stance footwork, small half-beat call-and-response, and synchronized ending beats. "
-                    "Make the body lead every gesture: knees soften before hands move, hips and shoulders pulse under "
-                    "the arms, wrists lag slightly after elbows, and feet keep making grounded adjustments."
-                ),
+                choreography_intro,
             ),
             ("timing", "\n".join(choreography_beats)),
             (
@@ -342,7 +402,7 @@ class ReferenceDanceH3Plan(BaseTool):
         ]
         header = (
             f"Single continuous shot, {inputs.get('ratio', '9:16')} vertical photoreal cinematic "
-            f"two-person dance video, duration {inputs.get('duration', 15)} seconds, no cuts."
+            f"{header_subject}, duration {inputs.get('duration', 15)} seconds, no cuts."
         )
         return header + "\n\n" + "\n\n".join(
             f"[{name}]\n{body}" for name, body in sections
@@ -380,6 +440,16 @@ class ReferenceDanceH3Plan(BaseTool):
             "6-10s: Both lightly tug or adjust the slim tie, then cross hands near chest level in rhythm. The stance opens wider with clear lower-body weight transfer.",
             "10-13s: They perform mirrored torso-crossing arm sweeps and wider footwork. Character 1 leads slightly, Character 2 follows with a soft half-beat delay, then they synchronize again.",
             "13-15s: They land in a cute synchronized final pose with both feet visible, relaxed hands near chest or tie height, gentle smiles, same full-body framing, and a short natural hold.",
+        ]
+
+    @staticmethod
+    def _default_single_choreography_beats() -> list[str]:
+        return [
+            "0-3s: Start full-body and centered with the original reference starting pose. Preserve the exact opening pause, gaze direction, and subtle body-weight preparation.",
+            "3-6s: Reproduce the reference's first hand gesture and head angle in the original order. Let the shoulder and hip shift lead the hand, with relaxed wrists and grounded feet.",
+            "6-9s: Reproduce the reference's face-near gesture, eye contact, blink, and pause without changing the wardrobe or adding a transformation.",
+            "9-12s: Reproduce the reference's torso and arm sweep, weight transfer, and timing. Keep the whole body active and both feet visible.",
+            "12-15s: Reproduce the reference's final head angle, controlled expression, hand position, and brief ending hold. No new gesture or improvisation.",
         ]
 
     @staticmethod
@@ -470,6 +540,7 @@ class ReferenceDanceH3Plan(BaseTool):
             "created_at": datetime.now(timezone.utc).isoformat(),
             "metadata": {
                 "one_shot": int(inputs.get("duration") or 15) == 15,
+                "performance_mode": inputs.get("performance_mode", "two_character"),
                 "ratio": inputs.get("ratio", "9:16"),
                 "resolution": inputs.get("resolution", "768P"),
                 "reference_image_count": len(inputs.get("reference_image_urls") or []),

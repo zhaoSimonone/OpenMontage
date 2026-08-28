@@ -12,6 +12,8 @@ Use `reference_dance_h3_plan`.
 
 1. Read `asset_manifest` and `subject_mapping`.
 2. Prefer a 15-second one-shot request when MiniMax-H3 supports the target duration.
+   For a single visible performer, set `performance_mode: single_character` so the
+   planner does not invent a second output subject from the motion reference.
 3. Compile the H3 prompt with:
    - identity lock
    - subject mapping
@@ -35,4 +37,3 @@ Do not call `minimax_h3_video` in this stage.
 - Duration and ratio are explicit.
 - Subject mapping and camera lock are visible in prompt text.
 - `paid_generation_submitted` is false.
-

@@ -1,0 +1,233 @@
+name: reference-performance
+version: "0.1"
+description: >
+  Reference-driven character performance workflow. It transfers timed body
+  actions, hand gestures, head angles, gaze, blinks, facial expressions, and
+  pauses from a reference video onto a target character identity image while
+  keeping identity, wardrobe, camera, and source-usage boundaries explicit.
+category: custom
+stability: beta
+default_checkpoint_policy: guided
+
+reference_input:
+  supported: true
+  analysis_depth: deep
+  analysis_tools:
+    - video_analyzer
+    - scene_detect
+    - frame_sampler
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/reference-performance/executive-producer
+  budget_default_usd: 3.00
+  max_revisions_per_stage: 3
+  max_send_backs: 3
+  max_wall_time_minutes: 30
+
+extensions:
+  custom_scripts: false
+  custom_playbooks: true
+  custom_skills: true
+  custom_tools: true
+
+required_skills:
+  - pipelines/reference-performance/executive-producer
+  - pipelines/reference-performance/intake-director
+  - pipelines/reference-performance/proposal-director
+  - pipelines/reference-performance/performance-analysis-director
+  - pipelines/reference-performance/bind-assets-director
+  - pipelines/reference-performance/plan-generation-director
+  - pipelines/reference-performance/generate-director
+  - pipelines/reference-performance/review-director
+  - pipelines/reference-performance/compose-director
+  - meta/reviewer
+  - meta/checkpoint-protocol
+
+compatible_playbooks:
+  recommended:
+    - clean-professional
+  also_works:
+    - flat-motion-graphics
+  custom_allowed: true
+
+stages:
+  - name: intake
+    skill: pipelines/reference-performance/intake-director
+    produces:
+      - video_analysis_brief
+      - asset_manifest
+    tools_available:
+      - video_analyzer
+      - scene_detect
+      - frame_sampler
+      - tencent_cos_upload
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Correct identity image and motion reference video are locked
+      - Target duration, aspect ratio, and provider are explicit
+      - Source-video identity and visual overlays are marked as excluded
+    success_criteria:
+      - Asset manifest separates identity image from performance video
+      - Reference video has technical metadata and sampled frames
+
+  - name: proposal
+    skill: pipelines/reference-performance/proposal-director
+    required_artifacts_in:
+      - video_analysis_brief
+      - asset_manifest
+    produces:
+      - proposal_packet
+      - decision_log
+    tools_available:
+      - video_compose
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Reference-performance transfer strategy is explicit and preserves the source usage boundaries
+      - MiniMax-H3 remains the approved generation provider/model unless the user explicitly changes it
+      - Remotion, HyperFrames, and applicable FFmpeg packaging choices are presented before runtime lock
+      - Composition mode is recorded separately from technical render runtime
+    success_criteria:
+      - Schema-valid proposal_packet with delivery_promise.motion_required true
+      - decision_log records render_runtime_selection and composition_mode decisions
+      - No paid generation or fallback is submitted in this stage
+
+  - name: performance_analysis
+    skill: pipelines/reference-performance/performance-analysis-director
+    required_artifacts_in:
+      - video_analysis_brief
+      - asset_manifest
+    produces:
+      - performance_analysis
+      - action_timeline
+    tools_available:
+      - frame_sampler
+      - video_analyzer
+      - visual_qa
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Each beat has action, gesture, head angle, gaze, expression, blink, weight, and pause
+      - No vague mood-only descriptions are used as a substitute for observable performance
+      - The source person's identity, wardrobe, background, text, and watermark remain excluded
+    success_criteria:
+      - Beat timeline covers the full reference performance
+      - Expression and action observations are independently recorded
+
+  - name: bind_assets
+    skill: pipelines/reference-performance/bind-assets-director
+    required_artifacts_in:
+      - performance_analysis
+      - asset_manifest
+    produces:
+      - subject_mapping
+    tools_available:
+      - tencent_cos_upload
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Target identity image is authoritative for face, hair, body, and wardrobe
+      - Reference video is authoritative only for performance timing and movement
+      - Provider-readable HTTPS URLs are verified before planning
+    success_criteria:
+      - Subject mapping has source-to-target role boundaries
+      - All provider-required media URLs pass anonymous read verification
+
+  - name: plan_generation
+    skill: pipelines/reference-performance/plan-generation-director
+    required_artifacts_in:
+      - performance_analysis
+      - subject_mapping
+      - proposal_packet
+    produces:
+      - generation_plan
+      - generation_attempts
+      - decision_log
+    required_tools:
+      - reference_performance_h3_plan
+    tools_available:
+      - reference_performance_h3_plan
+      - video_selector
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - H3 prompt contains timed action and facial-performance beats
+      - One-shot versus segmented strategy is justified by motion complexity
+      - Paid generation has not been submitted
+    success_criteria:
+      - Request contains identity, performance, continuity, and negative constraints
+      - GenerationAttempt is logged with status planned
+
+  - name: generate
+    skill: pipelines/reference-performance/generate-director
+    required_artifacts_in:
+      - generation_plan
+      - generation_attempts
+    produces:
+      - generation_attempts
+      - asset_manifest
+    required_tools:
+      - reference_dance_video_generate
+    tools_available:
+      - reference_dance_video_generate
+      - minimax_h3_video
+      - video_selector
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Exact approved provider/model/request are used
+      - No silent fallback or prompt-only substitute is executed
+      - Output media is downloaded and probed
+    success_criteria:
+      - Generated video exists under the project directory
+      - GenerationAttempt records task id, response, cost, and output path
+
+  - name: review
+    skill: pipelines/reference-performance/review-director
+    required_artifacts_in:
+      - performance_analysis
+      - generation_attempts
+      - asset_manifest
+    produces:
+      - reference_performance_qa
+      - final_review
+    required_tools:
+      - reference_performance_qa
+    tools_available:
+      - reference_performance_qa
+      - frame_sampler
+      - video_analyzer
+      - visual_qa
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Action order and gesture trajectories match the reference
+      - Expression, gaze, blink, head-angle, and pause timing are reviewed beat by beat
+      - Identity, wardrobe, camera, hands, and continuity are checked separately
+    success_criteria:
+      - Review contains action_order_score and expression_score
+      - Missing expression review blocks PASS
+
+  - name: compose
+    skill: pipelines/reference-performance/compose-director
+    required_artifacts_in:
+      - asset_manifest
+      - final_review
+      - proposal_packet
+    produces:
+      - edit_decisions
+      - render_report
+    tools_available:
+      - video_compose
+      - video_stitch
+      - video_trimmer
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Composition preserves the approved performance candidate
+      - No cosmetic edit is used to hide an action or expression failure
+      - Output ratio, duration, and audio policy are verified
+    success_criteria:
+      - Final render and final review exist under the project directory

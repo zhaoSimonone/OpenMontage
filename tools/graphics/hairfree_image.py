@@ -38,8 +38,9 @@ class HairfreeImage(BaseTool):
     dependencies = ["env:HAIRFREE_API_KEY"]
     install_instructions = (
         "Set HAIRFREE_API_KEY to your hairfree.work bearer token.\n"
-        "  Generation endpoint: https://hairfree.work/images/generations\n"
-        "  Edit endpoint: https://hairfree.work/images/edits"
+        "  Optional HAIRFREE_API_BASE_URL overrides the API origin (for example, an internal gateway).\n"
+        "  Generation endpoint: <base>/v1/images/generations\n"
+        "  Edit endpoint: <base>/v1/images/edits"
     )
     agent_skills = ["flux-best-practices"]
 
@@ -147,11 +148,33 @@ class HairfreeImage(BaseTool):
         "image_paths",
         "reference_images",
     ]
-    side_effects = ["writes image file to output_path", "calls hairfree.work API"]
+    side_effects = ["writes image file to output_path", "calls the configured Hairfree-compatible API"]
     user_visible_verification = ["Inspect generated image for relevance and quality"]
 
-    ENDPOINT_GENERATE = "https://hairfree.work/images/generations"
-    ENDPOINT_EDIT = "https://hairfree.work/images/edits"
+    DEFAULT_API_BASE_URL = "https://hairfree.work"
+
+    @classmethod
+    def _api_base_url(cls) -> str | None:
+        configured = os.environ.get("HAIRFREE_API_BASE_URL")
+        return configured.rstrip("/") if configured else None
+
+    @classmethod
+    def _endpoint_generate(cls) -> str:
+        base_url = cls._api_base_url()
+        return (
+            f"{base_url}/v1/images/generations"
+            if base_url
+            else f"{cls.DEFAULT_API_BASE_URL}/images/generations"
+        )
+
+    @classmethod
+    def _endpoint_edit(cls) -> str:
+        base_url = cls._api_base_url()
+        return (
+            f"{base_url}/v1/images/edits"
+            if base_url
+            else f"{cls.DEFAULT_API_BASE_URL}/images/edits"
+        )
 
     @staticmethod
     def _output_paths(output_path: str | None, count: int, extension: str) -> list[Path]:
@@ -382,7 +405,7 @@ class HairfreeImage(BaseTool):
         payload = self._build_generation_payload(inputs)
         try:
             response = requests_module.post(
-                self.ENDPOINT_GENERATE,
+                self._endpoint_generate(),
                 headers={
                     "Authorization": f"Bearer {os.environ['HAIRFREE_API_KEY']}",
                     "Content-Type": "application/json",
@@ -400,7 +423,7 @@ class HairfreeImage(BaseTool):
         try:
             payload, files = self._build_edit_payload_and_files(inputs)
             response = requests_module.post(
-                self.ENDPOINT_EDIT,
+                self._endpoint_edit(),
                 headers={"Authorization": f"Bearer {os.environ['HAIRFREE_API_KEY']}"},
                 data=payload,
                 files=files,

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/reference_performance_qa",
+  "title": "Reference Performance QA",
+  "description": "QA report separating automated motion/continuity metrics from beat-level action and facial-performance review.",
+  "type": "object",
+  "required": ["version", "project_id", "decision", "scores", "performance_analysis"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "project_id": { "type": "string" },
+    "decision": { "type": "string", "enum": ["PASS", "REPAIR", "REGENERATE", "REVIEW_REQUIRED"] },
+    "scores": {
+      "type": "object",
+      "required": ["motion", "continuity", "action_order", "expression"],
+      "properties": {
+        "motion": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "continuity": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "action_order": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "gesture": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "expression": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "gaze": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "head_angle": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "identity": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "camera": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "performance_analysis": {
+      "type": "object",
+      "required": ["expected_beat_count", "reviewed_beat_count", "expression_reviewed"],
+      "properties": {
+        "expected_beat_count": { "type": "integer", "minimum": 0 },
+        "reviewed_beat_count": { "type": "integer", "minimum": 0 },
+        "action_order_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "expression_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "expression_reviewed": { "type": "boolean" },
+        "missing_beat_ids": { "type": "array", "items": { "type": "string" } },
+        "beats": { "type": "array" },
+        "issues": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "next_action": { "type": "object", "additionalProperties": true },
+    "summary": { "type": "string" },
+    "output_path": { "type": "string" },
+    "metadata": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": true
+}

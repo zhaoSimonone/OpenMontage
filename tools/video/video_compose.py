@@ -2828,7 +2828,13 @@ class VideoCompose(BaseTool):
 
     @staticmethod
     def _build_subtitle_style(style: dict) -> str:
-        """Build ASS force_style string from style dict."""
+        """Build an FFmpeg-safe ASS force_style string from style dict.
+
+        ``force_style`` is itself a comma-separated ASS option list, nested
+        inside the comma-separated ``subtitles`` filter syntax. Escape the
+        inner separators so FFmpeg does not parse ``FontSize=...`` and the
+        following option as separate filters.
+        """
         parts = []
         parts.append(f"FontName={style.get('font', 'Inter')}")
         parts.append(f"FontSize={style.get('font_size', 28)}")
@@ -2845,7 +2851,7 @@ class VideoCompose(BaseTool):
         parts.append(f"Shadow={style.get('shadow', 0)}")
         parts.append(f"MarginV={style.get('margin_v', 40)}")
         parts.append(f"Alignment={style.get('alignment', 2)}")
-        return ",".join(parts)
+        return r"\,".join(parts)
 
     @staticmethod
     def _build_atempo(factor: float) -> str:

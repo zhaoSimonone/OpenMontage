@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/performance_analysis",
+  "title": "Reference Performance Analysis",
+  "description": "Timed, human-grounded analysis of the motion and facial performance in a reference video.",
+  "type": "object",
+  "required": ["version", "project_id", "reference_video", "beats", "mapping_policy"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "project_id": { "type": "string" },
+    "reference_video": {
+      "type": "object",
+      "required": ["path", "duration_seconds"],
+      "properties": {
+        "path": { "type": "string" },
+        "duration_seconds": { "type": "number", "minimum": 0 },
+        "fps": { "type": "number", "minimum": 0 },
+        "resolution": { "type": "string" },
+        "frame_paths": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "beats": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "beat_id",
+          "start_seconds",
+          "end_seconds",
+          "action",
+          "hand_gesture",
+          "head_angle",
+          "gaze",
+          "expression",
+          "blink",
+          "body_weight",
+          "pause_after_seconds",
+          "intensity"
+        ],
+        "properties": {
+          "beat_id": { "type": "string" },
+          "start_seconds": { "type": "number", "minimum": 0 },
+          "end_seconds": { "type": "number", "minimum": 0 },
+          "action": { "type": "string" },
+          "hand_gesture": { "type": "string" },
+          "head_angle": { "type": "string" },
+          "gaze": { "type": "string" },
+          "expression": { "type": "string" },
+          "blink": { "type": "string" },
+          "body_weight": { "type": "string" },
+          "pause_after_seconds": { "type": "number", "minimum": 0 },
+          "intensity": { "type": "string" },
+          "reference_frame_paths": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "camera": { "type": "object", "additionalProperties": true },
+    "mapping_policy": {
+      "type": "object",
+      "required": ["reference_video_provides", "reference_video_does_not_provide"],
+      "properties": {
+        "reference_video_provides": { "type": "array", "items": { "type": "string" } },
+        "reference_video_does_not_provide": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "analysis_method": { "type": "string" },
+    "metadata": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}

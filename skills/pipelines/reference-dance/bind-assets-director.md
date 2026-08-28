@@ -6,6 +6,8 @@ Bind character, wardrobe, and motion assets into separate roles so the video mod
 
 ## Subject Mapping
 
+For a single-character performance, set `performance_mode: single_character` and bind only the target performer. Do not create a placeholder second character; the motion reference performer is a choreography source, not a visible output subject.
+
 Create `subject_mapping`:
 
 ```yaml
@@ -33,4 +35,3 @@ Record assets in `asset_manifest` by role:
 - Character identity references and motion references are not treated as interchangeable.
 - Provider-required CDN URLs exist before generation planning.
 - The prompt compiler has enough data to keep full-body two-person framing.
-

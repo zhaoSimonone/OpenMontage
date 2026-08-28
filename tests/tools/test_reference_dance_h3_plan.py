@@ -85,6 +85,36 @@ def test_prompt_contains_p0_controls(tmp_path):
     assert "no first-person POV" in prompt
 
 
+def test_single_character_mode_does_not_invent_second_performer(tmp_path):
+    inputs = _inputs(tmp_path)
+    inputs.update(
+        {
+            "performance_mode": "single_character",
+            "character_1": {
+                "name": "black-purple gothic adult woman",
+                "summary": "the only visible adult performer",
+                "appearance": "long blue hair, white flower hair accessories, black-purple gothic outfit",
+            },
+            "choreography_beats": [
+                "0-5s: Preserve the reference gesture order exactly.",
+                "5-10s: Preserve the reference pause and head angle exactly.",
+                "10-15s: Preserve the reference ending pose exactly.",
+            ],
+        }
+    )
+
+    result = ReferenceDanceH3Plan().execute(inputs)
+
+    assert result.success
+    prompt = result.data["request_json"]["content"][0]["text"]
+    assert "one-person dance video" in prompt
+    assert "Exactly one fictional adult woman" in prompt
+    assert "Full-body single-performer shot" in prompt
+    assert "Do not redesign or improvise the choreography" in prompt
+    assert "Character 2" not in prompt
+    assert result.data["generation_attempt"]["metadata"]["performance_mode"] == "single_character"
+
+
 def test_reference_audio_role_is_optional(tmp_path):
     inputs = _inputs(tmp_path)
     inputs["reference_audio_url"] = "https://cdn.example.test/audio.wav"

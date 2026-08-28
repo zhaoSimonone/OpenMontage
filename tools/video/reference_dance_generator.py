@@ -95,6 +95,11 @@ class ReferenceDanceGenerator(BaseTool):
                 "default": "reference_to_video",
             },
             "project_id": {"type": "string"},
+            "pipeline_name": {
+                "type": "string",
+                "default": "reference-dance",
+                "description": "Pipeline label written to GenerationAttempt; defaults to the legacy dance pipeline.",
+            },
             "shot_id": {"type": "string", "default": "shot_001"},
             "attempt_id": {"type": "string", "default": "attempt_001"},
             "duration": {"type": "integer", "minimum": 4, "maximum": 15, "default": 15},
@@ -142,6 +147,7 @@ class ReferenceDanceGenerator(BaseTool):
     retry_policy = RetryPolicy(max_retries=0)
     idempotency_key_fields = [
         "project_id",
+        "pipeline_name",
         "shot_id",
         "attempt_id",
         "prompt",
@@ -201,6 +207,7 @@ class ReferenceDanceGenerator(BaseTool):
         if requested_provider == _COMFY_PROVIDER and fallback["required"] and not fallback["approved"]:
             attempt = self._attempt_record(
                 inputs=inputs,
+                pipeline_name=str(inputs.get("pipeline_name") or "reference-dance"),
                 provider=_COMFY_PROVIDER,
                 model=_COMFY_MODEL_HINT,
                 status="approval_required",
@@ -239,6 +246,7 @@ class ReferenceDanceGenerator(BaseTool):
         )
         attempt = self._attempt_record(
             inputs=inputs,
+            pipeline_name=str(inputs.get("pipeline_name") or "reference-dance"),
             provider=requested_provider,
             model=model,
             status="succeeded" if provider_result.success else "failed",
@@ -368,6 +376,7 @@ class ReferenceDanceGenerator(BaseTool):
     def _attempt_record(
         *,
         inputs: dict[str, Any],
+        pipeline_name: str,
         provider: str,
         model: str,
         status: str,
@@ -379,7 +388,7 @@ class ReferenceDanceGenerator(BaseTool):
         return {
             "version": "1.0",
             "project_id": inputs.get("project_id"),
-            "pipeline": "reference-dance",
+            "pipeline": pipeline_name,
             "shot_id": str(inputs.get("shot_id") or "shot_001"),
             "attempt_id": str(inputs.get("attempt_id") or "attempt_001"),
             "status": status,

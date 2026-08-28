@@ -90,6 +90,18 @@ def test_h3_is_the_default_route_and_is_logged(tmp_path):
     assert attempt["status"] == "succeeded"
 
 
+def test_pipeline_name_is_preserved_in_generation_attempt(tmp_path):
+    router, h3, _ = _router()
+    inputs = _inputs(tmp_path)
+    inputs["pipeline_name"] = "reference-performance"
+
+    result = router.execute(inputs)
+
+    assert result.success
+    attempt = json.loads((tmp_path / "attempt.json").read_text())
+    assert attempt["pipeline"] == "reference-performance"
+
+
 def test_missing_output_path_uses_project_video_directory(tmp_path):
     router, h3, _ = _router()
     inputs = _inputs(tmp_path)

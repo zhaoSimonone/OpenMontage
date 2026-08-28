@@ -474,6 +474,16 @@ class RemotionCaptionBurn(BaseTool):
         if not captions:
             return ToolResult(success=False, error="No caption words extracted.")
 
+        # Chinese SRT cues commonly contain a full phrase without spaces. Do
+        # not merge several timed phrases into one caption page by default.
+        if not segments and srt_path and "words_per_page" not in inputs:
+            if any(
+                re.search(r"[\u4e00-\u9fff]", caption["word"])
+                and not re.search(r"\s", caption["word"])
+                for caption in captions
+            ):
+                words_per_page = 1
+
         overlays = inputs.get("overlays")
 
         # Choose render method

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use this pipeline for a reference-driven two-person dance short where choreography fidelity, full-body framing, character identity, and provider cost control all matter.
+Use this pipeline for a reference-driven dance short with one or two visible characters where choreography fidelity, full-body framing, character identity, and provider cost control all matter.
 
 ## Core Rules
 
@@ -27,4 +27,3 @@ The model should not win by producing a pretty but stiff clip.
 - `bind_assets`, `plan_generation`, `generate`, and `review` require human approval.
 - The `plan_generation` gate is the paid-spend guard: it must produce a reviewable request JSON and planned attempt log, then stop.
 - The `generate` stage may call `minimax_h3_video` only after explicit user approval.
-

@@ -220,6 +220,26 @@ def test_edit_mode_accepts_multiple_reference_images(monkeypatch, tmp_path):
     assert out.read_bytes() == b"EDIT_IMAGE"
 
 
+def test_custom_api_base_url_is_used_for_generation(monkeypatch, tmp_path):
+    fake_requests = _FakeRequests()
+    fake = types.ModuleType("requests")
+    fake.post = fake_requests.post
+    fake.get = lambda url, timeout=None: _FakeResponse(b"")
+    monkeypatch.setitem(sys.modules, "requests", fake)
+    monkeypatch.setenv("HAIRFREE_API_KEY", "test-key")
+    monkeypatch.setenv("HAIRFREE_API_BASE_URL", "https://hairfree.corp.kuaishou.com")
+    from tools.graphics.hairfree_image import HairfreeImage
+
+    result = HairfreeImage().execute(
+        {"prompt": "p", "output_path": str(tmp_path / "internal.png")}
+    )
+
+    assert result.success
+    assert fake_requests.calls[0]["url"] == (
+        "https://hairfree.corp.kuaishou.com/v1/images/generations"
+    )
+
+
 def test_status_is_unavailable_without_key(monkeypatch):
     monkeypatch.delenv("HAIRFREE_API_KEY", raising=False)
     from tools.graphics.hairfree_image import HairfreeImage
