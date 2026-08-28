@@ -20,6 +20,7 @@ def test_reference_performance_has_analysis_and_review_gates():
     assert get_stage_order(manifest) == [
         "intake",
         "proposal",
+        "appearance_adaptation",
         "performance_analysis",
         "bind_assets",
         "plan_generation",
@@ -28,6 +29,7 @@ def test_reference_performance_has_analysis_and_review_gates():
         "compose",
     ]
     gates = {stage["name"]: stage.get("human_approval_default") for stage in manifest["stages"]}
+    assert gates["appearance_adaptation"] is True
     assert gates["performance_analysis"] is True
     assert gates["plan_generation"] is True
     assert gates["generate"] is True
@@ -53,3 +55,18 @@ def test_reference_performance_tools_are_explicit():
     assert "reference_performance_qa" in required
     assert "reference_dance_video_generate" in required
     assert "frame_sampler" in required
+    assert "hairfree_image" in required
+    assert "video_analyzer" in required
+
+
+def test_appearance_adaptation_stage_blocks_downstream_until_approved():
+    manifest = load_pipeline("reference-performance")
+
+    adaptation = next(stage for stage in manifest["stages"] if stage["name"] == "appearance_adaptation")
+    performance = next(stage for stage in manifest["stages"] if stage["name"] == "performance_analysis")
+    plan = next(stage for stage in manifest["stages"] if stage["name"] == "plan_generation")
+
+    assert adaptation["produces"] == ["appearance_adaptation", "asset_manifest"]
+    assert adaptation["human_approval_default"] is True
+    assert "appearance_adaptation" in performance["required_artifacts_in"]
+    assert "appearance_adaptation" in plan["required_artifacts_in"]

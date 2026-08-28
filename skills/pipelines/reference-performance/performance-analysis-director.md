@@ -5,6 +5,10 @@
 Turn the reference video into a timed performance contract that a generator
 and reviewer can use without guessing.
 
+Use the same sampled frames for two separate observations: the performance
+contract below, and the appearance-adaptation style contract. Do not mix the
+source performer's identity into either contract.
+
 ## Beat contract
 
 For every meaningful action or pause, record:

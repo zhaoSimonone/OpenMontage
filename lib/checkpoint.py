@@ -37,6 +37,7 @@ CANONICAL_STAGE_ARTIFACTS = {
     "edit": "edit_decisions",
     "compose": "render_report",
     "publish": "publish_log",
+    "appearance_adaptation": "appearance_adaptation",
 }
 
 # Additional artifacts that may be produced alongside canonical ones.

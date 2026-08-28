@@ -58,15 +58,66 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
             },
             "identity_lock": {"type": "string"},
             "reference_usage_policy": {"type": "object"},
+            "appearance_adaptation": {
+                "type": ["object", "string"],
+                "description": "Appearance adaptation artifact. Must be NOT_NEEDED or APPROVED before planning.",
+            },
+            "approved_appearance_image_url": {
+                "type": "string",
+                "description": "Provider-readable URL for the selected approved appearance candidate.",
+            },
         },
     }
 
+    idempotency_key_fields = [
+        *ReferenceDanceH3Plan.idempotency_key_fields,
+        "appearance_adaptation",
+        "approved_appearance_image_url",
+    ]
+
     def execute(self, inputs: dict[str, Any]):
         """Delegate persistence to the proven planner with a corrected pipeline label."""
-        result = super().execute(inputs)
+        normalized_inputs = dict(inputs)
+        try:
+            adaptation = self._load_appearance_adaptation(inputs.get("appearance_adaptation"))
+        except Exception as exc:
+            return self._failed_plan(str(exc))
+        try:
+            if adaptation.get("decision", "NOT_NEEDED") == "APPROVED":
+                selected_id = adaptation.get("selected_candidate_id")
+                candidates = adaptation.get("candidates", [])
+                if not isinstance(candidates, list):
+                    raise ValueError("appearance_adaptation.candidates must be a list")
+                approved = [candidate for candidate in candidates if candidate.get("status") == "approved"]
+                selected = next((candidate for candidate in approved if candidate.get("candidate_id") == selected_id), None)
+                if len(approved) != 1 or not selected:
+                    raise ValueError(
+                        "APPROVED appearance adaptation requires exactly one approved candidate selected by selected_candidate_id"
+                    )
+                selected_url = inputs.get("approved_appearance_image_url") or selected.get("image_url")
+                if not selected_url:
+                    raise ValueError(
+                        "APPROVED appearance adaptation requires approved_appearance_image_url or candidate.image_url"
+                    )
+                # The approved adapted image is the target image for H3. Keeping
+                # the original and adapted images as undifferentiated references
+                # would make their authority ambiguous to the provider.
+                normalized_inputs["reference_image_urls"] = [str(selected_url)]
+        except Exception as exc:
+            return self._failed_plan(str(exc))
+
+        result = super().execute(normalized_inputs)
         if result.success:
             attempt = result.data.get("generation_attempt", {})
             attempt["pipeline"] = "reference-performance"
+            if adaptation.get("decision", "NOT_NEEDED") == "APPROVED":
+                attempt.setdefault("metadata", {}).update(
+                    {
+                        "appearance_adaptation_selected_candidate_id": adaptation.get("selected_candidate_id"),
+                        "appearance_adaptation_image_url": normalized_inputs["reference_image_urls"][0],
+                        "original_identity_reference_urls": list(inputs.get("reference_image_urls") or []),
+                    }
+                )
             result.data["generation_attempt"] = attempt
             attempt_path = result.data.get("attempt_json_path")
             if attempt_path:
@@ -75,6 +126,12 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
                     encoding="utf-8",
                 )
         return result
+
+    @staticmethod
+    def _failed_plan(error: str):
+        from tools.base_tool import ToolResult
+
+        return ToolResult(success=False, error=f"Reference performance H3 plan failed: {error}")
 
     @classmethod
     def _compile_prompt(cls, inputs: dict[str, Any]) -> str:
@@ -85,8 +142,40 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
 
         identity = str(
             inputs.get("identity_lock")
-            or "[reference_image] is the sole authority for the target face, facial proportions, hair, wardrobe, body proportions, age, and identity. Preserve it consistently from first frame to last frame."
+            or "[reference_image] is the sole authority for the target face, facial proportions, body proportions, age, and identity. Preserve it consistently from first frame to last frame."
         )
+        adaptation = cls._load_appearance_adaptation(inputs.get("appearance_adaptation"))
+        adaptation_status = adaptation.get("decision", "NOT_NEEDED")
+        if adaptation_status == "APPROVED":
+            selected_id = adaptation.get("selected_candidate_id")
+            approved = [candidate for candidate in adaptation.get("candidates", []) if candidate.get("status") == "approved"]
+            selected = next((candidate for candidate in approved if candidate.get("candidate_id") == selected_id), None)
+            if len(approved) != 1 or not selected:
+                raise ValueError(
+                    "appearance_adaptation APPROVED requires exactly one approved candidate selected by selected_candidate_id"
+                )
+            style_prompt = adaptation.get("style_contract", {}).get("target_appearance_prompt")
+            if style_prompt:
+                wardrobe = str(style_prompt)
+            else:
+                wardrobe = "Use the approved appearance adaptation for the target character's wardrobe, hair styling, makeup, palette, and lighting."
+            identity = (
+                "[target_image] is an approved appearance adaptation derived from the original target identity "
+                "image. Treat its immutable target identity as authoritative: face shape, facial proportions, eye "
+                "color, age, body proportions, and character identity. Apply only the approved wardrobe, hair "
+                "arrangement, makeup, palette, and lighting adaptation. Do not change the target identity or copy "
+                "the reference performer's identity."
+            )
+        elif adaptation_status == "NOT_NEEDED":
+            wardrobe = str(
+                inputs.get("wardrobe")
+                or "Keep the target character's wardrobe, hair arrangement, makeup, palette, and lighting from the supplied identity image unchanged throughout."
+            )
+        else:
+            raise ValueError(
+                "appearance_adaptation must be NOT_NEEDED or APPROVED before H3 planning; "
+                f"received {adaptation_status!r}"
+            )
         scene = str(
             inputs.get("scene")
             or "Use a simple scene selected independently from the reference video; preserve the reference camera grammar only when the analysis says it is part of the intended performance."
@@ -96,7 +185,7 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
         performer_count = "exactly one" if mode == "single_character" else "exactly two"
         subject = (
             f"There are {performer_count} visible fictional adult performer(s). "
-            "The target identity image has priority over the reference video's performer. "
+            "The original target identity image owns immutable identity; an approved appearance image may own only the approved styling attributes. "
             "The reference video supplies performance data only: action order, gesture trajectory, body rhythm, "
             "head angle, gaze direction, blink timing, facial expression, breathing rhythm, pauses, and reaction timing. "
             "Never copy the reference performer's face, hair, body, clothing, background, text, watermark, or identity."
@@ -105,10 +194,8 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
             inputs.get("camera_lock")
             or "Preserve a stable camera, subject count, framing, lens feel, and spatial blocking. Do not add a cut, zoom, reframing, or new character unless explicitly present in the approved plan."
         )
-        wardrobe = str(
-            inputs.get("wardrobe")
-            or "Keep the target character's wardrobe from the supplied identity/reference images unchanged throughout. Ignore every outfit transformation in the motion reference."
-        )
+        if inputs.get("wardrobe") and adaptation_status == "NOT_NEEDED":
+            wardrobe = str(inputs["wardrobe"])
         beat_text = "\n".join(cls._format_beat(index, beat) for index, beat in enumerate(beats, start=1))
         negatives = inputs.get("negative_constraints") or [
             "identity drift",
@@ -152,7 +239,7 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
             ("timed_performance_beats", beat_text),
             (
                 "continuity_lock",
-                "Keep the target face, hair, accessories, wardrobe, body scale, subject count, left/right placement, lighting, and camera distance stable from first frame to last frame. If a segment boundary is necessary, begin from the exact terminal pose and expression of the previous segment; never reset to a neutral pose.",
+                "Keep the target face, immutable identity, approved styling, body scale, subject count, left/right placement, lighting, and camera distance stable from first frame to last frame. If a segment boundary is necessary, begin from the exact terminal pose and expression of the previous segment; never reset to a neutral pose.",
             ),
             (
                 "audio",
@@ -181,6 +268,20 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
                 raise ValueError("performance_analysis must be a JSON object")
             return data
         return {}
+
+    @staticmethod
+    def _load_appearance_adaptation(value: Any) -> dict[str, Any]:
+        if value is None or value == "":
+            return {"decision": "NOT_NEEDED"}
+        if isinstance(value, dict):
+            return value
+        path = Path(str(value))
+        if not path.is_file():
+            raise ValueError(f"appearance_adaptation does not exist: {path}")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("appearance_adaptation must be a JSON object")
+        return data
 
     @staticmethod
     def _validate_performance_beats(beats: Any) -> None:
@@ -272,6 +373,9 @@ class ReferencePerformanceH3Plan(ReferenceDanceH3Plan):
                 "expression_review_required": True,
                 "identity_source_authority": "reference_image",
                 "motion_source_authority": "reference_video",
+                "appearance_adaptation_decision": ReferencePerformanceH3Plan._load_appearance_adaptation(
+                    inputs.get("appearance_adaptation")
+                ).get("decision", "NOT_NEEDED"),
             }
         )
         attempt["metadata"]["quality_gate"]["priority_order"] = [

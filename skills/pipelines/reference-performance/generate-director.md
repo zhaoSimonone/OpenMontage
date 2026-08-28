@@ -4,6 +4,8 @@
 
 - The exact H3 request is approved.
 - Provider and model are still `minimax_h3` / `MiniMax-H3`.
+- Appearance adaptation is `NOT_NEEDED` or has exactly one human-approved
+  candidate.
 - Output path is under the project directory.
 
 ## Process

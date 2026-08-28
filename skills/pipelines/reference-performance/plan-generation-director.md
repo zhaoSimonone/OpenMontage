@@ -10,10 +10,16 @@ MiniMax-H3 request. This stage never calls the paid API.
 Use `reference_performance_h3_plan` with:
 
 - target identity image URL(s)
+- approved appearance candidate URL when `appearance_adaptation.decision` is
+  `APPROVED`; otherwise the original identity image URL(s)
 - motion reference video URL
 - `performance_analysis`
 - subject mapping and camera lock
 - explicit source exclusion rules
+
+Before calling the planner, verify that appearance adaptation is either
+`NOT_NEEDED` or `APPROVED`. Never pass a candidate set that is still awaiting
+human selection.
 
 ## Strategy
 
