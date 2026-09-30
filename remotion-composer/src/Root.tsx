@@ -128,8 +128,9 @@ const calculateMetadata: CalculateMetadataFunction<ExplainerProps> = async ({
     return { durationInFrames: 30 * 60 };
   }
   const lastEnd = Math.max(...cuts.map((c) => c.out_seconds || 0));
-  // Add 1 second padding for final fade
-  return { durationInFrames: Math.ceil((lastEnd + 1) * 30) };
+  // Cut-level fade-out happens inside its final sequence; extra padding adds
+  // an unintended background-only tail to exact-duration source-led edits.
+  return { durationInFrames: Math.max(1, Math.ceil(lastEnd * 30)) };
 };
 
 export const Root: React.FC = () => {

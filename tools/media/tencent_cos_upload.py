@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import mimetypes
 import os
@@ -20,6 +21,7 @@ from tools.base_tool import (
     ToolResult,
     ToolRuntime,
     ToolStability,
+    ToolStatus,
     ToolTier,
 )
 
@@ -44,14 +46,13 @@ class TencentCosUpload(BaseTool):
 
     dependencies = [
         "python:qcloud_cos",
-        "env:TENCENT_COS_SECRET_ID",
-        "env:TENCENT_COS_SECRET_KEY",
         "env:TENCENT_COS_BUCKET",
     ]
     install_instructions = (
         "Install the Tencent COS SDK with `pip install cos-python-sdk-v5`, then set "
-        "TENCENT_COS_SECRET_ID, TENCENT_COS_SECRET_KEY, TENCENT_COS_BUCKET, and "
-        "optionally TENCENT_COS_REGION/TENCENT_COS_PREFIX in .env."
+        "TENCENT_COS_BUCKET and either TENCENT_COS_SECRET_ID/TENCENT_COS_SECRET_KEY "
+        "or TENCENT_COS_CREDENTIALS_FILE pointing to Tencent's credential CSV. "
+        "Optionally set TENCENT_COS_REGION/TENCENT_COS_PREFIX in .env."
     )
     capabilities = [
         "upload_image",
@@ -134,6 +135,62 @@ class TencentCosUpload(BaseTool):
             "public_base_url": cls._env("TENCENT_COS_PUBLIC_BASE_URL"),
         }
 
+    @classmethod
+    def _csv_credentials(cls) -> tuple[dict[str, str], str]:
+        """Read Tencent's exported sub-user CSV without exposing its secrets."""
+        raw_path = cls._env("TENCENT_COS_CREDENTIALS_FILE")
+        if not raw_path:
+            return {}, ""
+        path = Path(raw_path).expanduser()
+        if not path.is_file():
+            return {}, f"credentials file not found: {path}"
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="") as stream:
+                row = next(csv.DictReader(stream), None)
+        except Exception as exc:
+            return {}, f"credentials file could not be read: {type(exc).__name__}"
+        if not row:
+            return {}, "credentials file has no data row"
+        values = {
+            "secret_id": str(row.get("SecretId") or row.get("SecretID") or "").strip(),
+            "secret_key": str(row.get("SecretKey") or "").strip(),
+        }
+        missing = []
+        if not values["secret_id"]:
+            missing.append("SecretId")
+        if not values["secret_key"]:
+            missing.append("SecretKey")
+        if missing:
+            return {}, f"credentials file is missing {', '.join(missing)}"
+        return values, ""
+
+    @classmethod
+    def _resolved_config_values(cls, inputs: dict[str, Any]) -> dict[str, str]:
+        config = cls._config_values(inputs)
+        file_values, file_error = cls._csv_credentials()
+        if not config["secret_id"]:
+            config["secret_id"] = file_values.get("secret_id", "")
+        if not config["secret_key"]:
+            config["secret_key"] = file_values.get("secret_key", "")
+        if config["secret_id"] and config["secret_key"]:
+            # Explicit env credentials take precedence over a stale optional
+            # CSV path, as documented in .env.example.
+            file_error = ""
+        config["credentials_file_error"] = file_error
+        return config
+
+    def get_status(self) -> ToolStatus:
+        try:
+            self.check_dependencies()
+        except Exception:
+            return ToolStatus.UNAVAILABLE
+        config = self._resolved_config_values({})
+        if config.get("credentials_file_error"):
+            return ToolStatus.UNAVAILABLE
+        if not config.get("secret_id") or not config.get("secret_key"):
+            return ToolStatus.UNAVAILABLE
+        return ToolStatus.AVAILABLE
+
     @staticmethod
     def _normalize_prefix(prefix: str) -> str:
         prefix = prefix.strip().strip("/")
@@ -194,6 +251,44 @@ class TencentCosUpload(BaseTool):
         except URLError as exc:
             raise RuntimeError(f"provider URL could not be reached: {exc.reason}") from exc
 
+    @staticmethod
+    def _cos_error_detail(exc: Exception, config: dict[str, str]) -> str:
+        """Return actionable COS diagnostics while redacting credentials."""
+        code = ""
+        status = ""
+        message = ""
+        getter = getattr(exc, "get_error_code", None)
+        if callable(getter):
+            try:
+                code = str(getter() or "")
+            except Exception:
+                pass
+        getter = getattr(exc, "get_status_code", None)
+        if callable(getter):
+            try:
+                status = str(getter() or "")
+            except Exception:
+                pass
+        getter = getattr(exc, "get_error_msg", None)
+        if callable(getter):
+            try:
+                message = str(getter() or "")
+            except Exception:
+                pass
+        if not message:
+            message = str(exc)
+        for secret in (config.get("secret_id", ""), config.get("secret_key", "")):
+            if secret:
+                message = message.replace(secret, "[REDACTED]")
+        parts = [type(exc).__name__]
+        if status:
+            parts.append(f"HTTP {status}")
+        if code:
+            parts.append(f"code={code}")
+        if message:
+            parts.append(f"message={message[:300]}")
+        return ", ".join(parts)
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         local_path = Path(str(inputs.get("local_path") or "")).expanduser()
         if not local_path.is_file():
@@ -201,7 +296,12 @@ class TencentCosUpload(BaseTool):
         if local_path.stat().st_size == 0:
             return ToolResult(success=False, error=f"local_path is empty: {local_path}")
 
-        config = self._config_values(inputs)
+        config = self._resolved_config_values(inputs)
+        if config.get("credentials_file_error"):
+            return ToolResult(
+                success=False,
+                error=f"Tencent COS {config['credentials_file_error']}. {self.install_instructions}",
+            )
         missing = [name for name in ("secret_id", "secret_key", "bucket") if not config[name]]
         if missing:
             return ToolResult(
@@ -252,8 +352,8 @@ class TencentCosUpload(BaseTool):
                     expected_type=content_type,
                 )
         except (CosServiceError, CosClientError) as exc:
-            code = str(getattr(exc, "get_error_code", lambda: "")() or "")
-            return ToolResult(success=False, error=f"Tencent COS upload failed: {code or type(exc).__name__}")
+            detail = self._cos_error_detail(exc, config)
+            return ToolResult(success=False, error=f"Tencent COS upload failed: {detail}")
         except Exception as exc:
             return ToolResult(success=False, error=f"Tencent COS upload failed: {exc}")
 

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/video_character_edit_qa",
+  "title": "Video Character Edit QA",
+  "description": "Matched-timestamp visual review artifact for source-video character editing.",
+  "type": "object",
+  "required": ["version", "stage", "source_path", "edited_path", "contact_sheet_path", "sampled_frames", "status", "manual_review_required", "checks", "issues"],
+  "properties": {
+    "version": {"type": "string", "const": "1.0"},
+    "stage": {"type": "string", "enum": ["outfit_edit", "hair_edit", "face_lock", "final"]},
+    "source_path": {"type": "string"},
+    "edited_path": {"type": "string"},
+    "contact_sheet_path": {"type": "string"},
+    "sampled_frames": {"type": "integer", "minimum": 2},
+    "status": {"type": "string", "enum": ["PASS", "RETRY", "REVIEW_REQUIRED"]},
+    "manual_review_required": {"type": "boolean"},
+    "checks": {
+      "type": "object",
+      "required": ["identity_score", "motion_score", "background_score", "appearance_score", "continuity_score"],
+      "properties": {
+        "identity_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "motion_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "background_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "appearance_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "continuity_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": false
+    },
+    "issues": {"type": "array", "items": {"type": "string"}},
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": false
+}

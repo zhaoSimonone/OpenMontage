@@ -37,6 +37,7 @@ ARTIFACT_NAMES = [
     "narrative_short_brief",
     "segment_bridge_contract",
     "audio_timeline",
+    "video_character_edit_qa",
 ]
 
 

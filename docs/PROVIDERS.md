@@ -58,8 +58,14 @@ KLING_API_BASE_URL=          # Optional; default https://api-singapore.klingai.c
 # VIDEO
 HEYGEN_API_KEY=              # HeyGen avatar video gateway
 MINIMAX_H3_API_KEY=          # MiniMax-H3 video via metaso.cn proxy
+OPENROUTER_API_KEY=          # Seedance 2.0 Mini source-video editing
 RUNWAY_API_KEY=              # Runway Gen-4 video (direct)
 SUNO_API_KEY=                # Suno music generation
+
+# TENCENT COS (for URL-only video providers)
+TENCENT_COS_BUCKET=public-cos-1257258774
+TENCENT_COS_REGION=ap-guangzhou
+TENCENT_COS_CREDENTIALS_FILE=  # Tencent console CSV with SecretId/SecretKey
 
 # LOCAL (no keys needed — just GPU + install)
 VIDEO_GEN_LOCAL_ENABLED=     # Set to "true" for local video gen
@@ -183,6 +189,47 @@ The provider sends a required `content` array. Text-to-video contains only a tex
 |------|-------|
 | MiniMax-H3 768P | ~$0.08/sec |
 | MiniMax-H3 2K | ~$0.13/sec |
+
+---
+
+### OpenRouter - Seedance 2.0 Mini Source-Video Editing
+
+> **Strict source-video editing through OpenRouter.** This is the provider used by
+> `video-character-edit`: the original video is sent as the first `video_url`
+> reference, the request sets `omni_reference_task_type=edit`, and outfit/hair
+> references are sent as typed image references. It is separate from the normal
+> `seedance_video` reference-to-video path.
+
+**Tool unlocked:** `openrouter_seedance`
+**Env var:** `OPENROUTER_API_KEY`
+
+#### Setup
+
+1. Create an OpenRouter key with access to the video API.
+2. Add `OPENROUTER_API_KEY=...` to `.env`.
+3. For local source/reference files, also configure the Tencent COS uploader
+   (`TENCENT_COS_SECRET_ID`/`TENCENT_COS_SECRET_KEY` or
+   `TENCENT_COS_CREDENTIALS_FILE`, plus `TENCENT_COS_BUCKET`) so the provider
+   receives public HTTPS URLs. Existing HTTPS URLs can be passed directly
+   without COS.
+
+#### Request contract
+
+The adapter calls `POST https://openrouter.ai/api/v1/videos` with model
+`bytedance/seedance-2.0-mini`, polls the returned `polling_url` (or
+`/videos/{id}`), and downloads `unsigned_urls[0]`. If a completed response has
+no unsigned URL, it falls back to `/videos/{id}/content?index=0`.
+
+Use `input_video_path`/`input_video_url` for the source and
+`reference_image_paths`/`reference_image_urls` for face, hair, or outfit
+references. The tool never treats a reference-only generation provider as a
+source-video edit fallback.
+
+#### Pricing
+
+OpenRouter pricing is account/model dependent. OpenMontage estimates
+`$0.30/second` for planning and records the API response's `usage` for final
+reconciliation; check the OpenRouter activity page for the actual charge.
 
 ---
 
@@ -986,6 +1033,7 @@ These tools require only FFmpeg or Python packages — no GPU, no API key.
 | **ElevenLabs** | `ELEVENLABS_API_KEY` | `elevenlabs_tts`, `music_gen` | Free tier + paid |
 | **fal.ai** | `FAL_KEY` | `flux_image`, `recraft_image`, `kling_video`, `veo_video`, `minimax_video` | Pay-as-you-go |
 | **MiniMax-H3 (metaso)** | `MINIMAX_H3_API_KEY` | `minimax_h3_video` | Pay-as-you-go |
+| **OpenRouter** | `OPENROUTER_API_KEY` | `openrouter_seedance` (Seedance 2.0 Mini source-video edit) | Pay-as-you-go |
 | **Kling Official** | `KLING_API_KEY` | `kling_official_video`, `kling_official_image`, `kling_tts`, `kling_avatar`, `kling_lip_sync` | Pay-as-you-go |
 | **OpenAI** | `OPENAI_API_KEY` | `openai_tts`, `openai_image` | Paid only |
 | **Hairfree** | `HAIRFREE_API_KEY` | `hairfree_image` | Depends on hairfree plan |
@@ -1007,7 +1055,8 @@ How many providers cover each capability:
 | Capability | Cloud Providers | Local Providers | Free Options |
 |-----------|----------------|-----------------|--------------|
 | **Image Generation** | FLUX, Kling Official, Grok, Google Imagen, GPT Image 2 (OpenAI, Hairfree), Recraft | Local Diffusion | Pexels, Pixabay (stock) |
-| **Video Generation** | Grok, Kling Official, Kling via fal.ai, Runway, Veo, Gemini Omni, Higgsfield, MiniMax, MiniMax-H3, HeyGen | WAN, Hunyuan, CogVideo, LTX | Pexels, Pixabay (stock) |
+| **Video Generation** | Grok, Kling Official, Kling via fal.ai, Runway, Veo, Gemini Omni, Higgsfield, MiniMax, MiniMax-H3, OpenRouter Seedance, HeyGen | WAN, Hunyuan, CogVideo, LTX | Pexels, Pixabay (stock) |
+| **Source-Video Editing** | OpenRouter Seedance 2.0 Mini, Gemini Omni | FFmpeg (post-production only) | — |
 | **Text-to-Speech** | ElevenLabs, Google TTS, Kling Official, OpenAI | Piper | Piper, Google free tier, ElevenLabs free tier |
 | **Music Generation** | ElevenLabs, Suno, Google Lyria | — | ElevenLabs free tier |
 | **Post-Production** | — | FFmpeg (compose, stitch, trim, mix, enhance, grade) | All free |

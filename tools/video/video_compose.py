@@ -581,6 +581,33 @@ class VideoCompose(BaseTool):
                             f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black",
                         ]
                     vf_parts: list[str] = [*geom, "setsar=1", "fps=30"]
+                    # Apply optional, cut-scoped logo cleanup after normalizing
+                    # geometry so coordinates are expressed in final pixels.
+                    cleanup_map = (edit_decisions.get("metadata") or {}).get(
+                        "per_cut_delogo", {}
+                    )
+                    cleanup_regions = (
+                        cleanup_map.get(cut.get("id"), [])
+                        if isinstance(cleanup_map, dict)
+                        else []
+                    )
+                    if isinstance(cleanup_regions, dict):
+                        cleanup_regions = [cleanup_regions]
+                    if isinstance(cleanup_regions, list):
+                        for region in cleanup_regions:
+                            if not isinstance(region, dict):
+                                continue
+                            try:
+                                x = int(region["x"])
+                                y = int(region["y"])
+                                width = int(region["width"])
+                                height = int(region["height"])
+                            except (KeyError, TypeError, ValueError):
+                                continue
+                            if x >= 0 and y >= 0 and width > 0 and height > 0:
+                                vf_parts.append(
+                                    f"delogo=x={x}:y={y}:w={width}:h={height}:show=0"
+                                )
                     af_parts: list[str] = []
                     if speed != 1.0:
                         vf_parts.append(f"setpts={1.0/speed}*PTS")
@@ -696,11 +723,22 @@ class VideoCompose(BaseTool):
             else:
                 cmd.extend(["-c:v", "copy"])
 
+            target_duration = (edit_decisions.get("metadata") or {}).get(
+                "target_duration_seconds"
+            )
             if audio_path and Path(audio_path).exists():
                 # Use type-based selectors (0:v, 1:a) instead of index-based
                 # (0:v:0) because source videos may have audio as stream 0
                 # and video as stream 1 (e.g. Kling-generated clips).
-                cmd.extend(["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest"])
+                cmd.extend(["-map", "0:v", "-map", "1:a", "-c:a", "aac"])
+                # AAC source tracks can end a fraction of a frame before the
+                # source video's container duration. Honor an explicit edit
+                # target by padding only that tail, instead of shortening the
+                # rendered picture with -shortest.
+                if isinstance(target_duration, (int, float)) and target_duration > 0:
+                    cmd.extend(["-af", "apad", "-t", str(target_duration)])
+                else:
+                    cmd.append("-shortest")
             else:
                 cmd.extend(["-c:a", "copy"])
 

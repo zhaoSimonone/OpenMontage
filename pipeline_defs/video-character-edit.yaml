@@ -1,0 +1,261 @@
+name: video-character-edit
+version: "0.1"
+description: >
+  Source-video character editing workflow. It keeps the supplied video's motion,
+  camera, setting, and original audio as authoritative while applying approved
+  wardrobe, hairstyle, and identity edits in separate checkpointed stages.
+category: custom
+stability: beta
+default_checkpoint_policy: guided
+
+reference_input:
+  supported: true
+  analysis_depth: deep
+  analysis_tools:
+    - video_analyzer
+    - scene_detect
+    - frame_sampler
+    - face_tracker
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/video-character-edit/executive-producer
+  budget_default_usd: 3.00
+  max_revisions_per_stage: 3
+  max_send_backs: 3
+  max_wall_time_minutes: 45
+
+extensions:
+  custom_scripts: false
+  custom_playbooks: true
+  custom_skills: true
+  custom_tools: true
+
+required_skills:
+  - pipelines/video-character-edit/executive-producer
+  - pipelines/video-character-edit/intake-director
+  - pipelines/video-character-edit/proposal-director
+  - pipelines/video-character-edit/preprocess-director
+  - pipelines/video-character-edit/outfit-edit-director
+  - pipelines/video-character-edit/hair-edit-director
+  - pipelines/video-character-edit/face-lock-director
+  - pipelines/video-character-edit/review-director
+  - pipelines/video-character-edit/compose-director
+  - pipelines/video-character-edit/publish-director
+  - meta/reviewer
+  - meta/checkpoint-protocol
+
+compatible_playbooks:
+  recommended:
+    - clean-professional
+  also_works:
+    - premium-minimalist
+  custom_allowed: true
+
+stages:
+  - name: intake
+    skill: pipelines/video-character-edit/intake-director
+    produces:
+      - source_media_review
+      - asset_manifest
+    tools_available:
+      - video_analyzer
+      - scene_detect
+      - frame_sampler
+      - face_tracker
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Source video and each reference image have explicit roles
+      - Original audio, aspect ratio, frame rate, and duration are recorded
+      - Only one target person is selected unless multi-person tracking is explicit
+    success_criteria:
+      - Source video has a real technical probe and representative frames
+      - Asset manifest separates face, hair, outfit, and source-video roles
+
+  - name: proposal
+    skill: pipelines/video-character-edit/proposal-director
+    required_artifacts_in:
+      - source_media_review
+      - asset_manifest
+    produces:
+      - proposal_packet
+      - decision_log
+    tools_available:
+      - video_edit_selector
+      - video_compose
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Provider capability is proven for existing-video editing, not assumed from reference-to-video support
+      - Outfit, hair, and face-lock order is explicit
+      - Provider, model, segment policy, audio policy, and runtime are logged before paid work
+    success_criteria:
+      - Proposal states the preservation promise and known provider limitations
+      - No paid generation or face-lock call is submitted
+
+  - name: preprocess
+    skill: pipelines/video-character-edit/preprocess-director
+    required_artifacts_in:
+      - source_media_review
+      - asset_manifest
+      - proposal_packet
+    produces:
+      - video_analysis_brief
+      - asset_manifest
+    tools_available:
+      - video_analyzer
+      - scene_detect
+      - frame_sampler
+      - face_tracker
+      - video_trimmer
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Provider-specific normalization does not destroy source timing or audio
+      - Segments have overlap and stable source timecodes
+      - Every segment has a resumable path under the project directory
+    success_criteria:
+      - Source cadence and audio policy are recorded
+      - Segment manifest is complete and probeable
+
+  - name: outfit_edit
+    skill: pipelines/video-character-edit/outfit-edit-director
+    required_artifacts_in:
+      - video_analysis_brief
+      - asset_manifest
+      - proposal_packet
+    produces:
+      - asset_manifest
+      - edit_decisions
+    required_tools:
+      - video_edit_selector
+    tools_available:
+      - video_edit_selector
+      - frame_sampler
+      - visual_qa
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Only the target clothing changes
+      - Motion, camera, background, face, hair, and source audio remain unchanged
+      - Each accepted segment and provider attempt is persisted
+    success_criteria:
+      - Accepted outfit output exists under the project assets directory
+      - Human review is required before hair editing
+
+  - name: hair_edit
+    skill: pipelines/video-character-edit/hair-edit-director
+    required_artifacts_in:
+      - video_analysis_brief
+      - asset_manifest
+      - proposal_packet
+    produces:
+      - asset_manifest
+      - edit_decisions
+    required_tools:
+      - video_edit_selector
+    tools_available:
+      - video_edit_selector
+      - frame_sampler
+      - visual_qa
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Only the target hairstyle changes
+      - Face structure, outfit, body, motion, camera, background, and audio remain unchanged
+      - Hairline and occlusion artifacts are inspected frame by frame
+    success_criteria:
+      - Accepted hair output exists under the project assets directory
+      - Human review is required before face locking
+
+  - name: face_lock
+    skill: pipelines/video-character-edit/face-lock-director
+    required_artifacts_in:
+      - video_analysis_brief
+      - asset_manifest
+      - proposal_packet
+    produces:
+      - asset_manifest
+      - edit_decisions
+    required_tools:
+      - face_identity_lock
+    tools_available:
+      - face_identity_lock
+      - face_tracker
+      - frame_sampler
+      - visual_qa
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Identity changes are limited to the approved face region
+      - Expressions, gaze, occlusions, hairline, and temporal stability are preserved
+      - Missing provider access blocks the stage instead of silently substituting generation
+    success_criteria:
+      - Accepted face-locked output exists and is probeable
+      - No unapproved face enhancement is applied
+
+  - name: review
+    skill: pipelines/video-character-edit/review-director
+    required_artifacts_in:
+      - asset_manifest
+      - proposal_packet
+    produces:
+      - video_character_edit_qa
+      - final_review
+    required_tools:
+      - video_character_edit_qa
+    tools_available:
+      - video_character_edit_qa
+      - frame_sampler
+      - visual_qa
+      - face_tracker
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Contact sheets compare source and each edit stage at matched timestamps
+      - Identity, clothing, hairstyle, motion, camera, background, audio, and seams are reviewed separately
+      - Automatic metrics are marked uncomputed until validated against human judgments
+    success_criteria:
+      - QA artifact contains contact sheets and an explicit PASS, RETRY, or REVIEW_REQUIRED decision
+      - Final review does not claim preservation without visual inspection
+
+  - name: compose
+    skill: pipelines/video-character-edit/compose-director
+    required_artifacts_in:
+      - asset_manifest
+      - final_review
+      - proposal_packet
+    produces:
+      - edit_decisions
+      - render_report
+    tools_available:
+      - video_stitch
+      - video_trimmer
+      - video_compose
+      - audio_mixer
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Accepted edited video is packaged without altering source timing or audio policy
+      - Segment joins pass seam checks
+      - Runtime matches the approved proposal decision
+    success_criteria:
+      - Final render exists under projects/<project-id>/renders/
+      - Render report records source stages, codec, duration, FPS, resolution, and audio policy
+
+  - name: publish
+    skill: pipelines/video-character-edit/publish-director
+    required_artifacts_in:
+      - render_report
+      - final_review
+    produces:
+      - publish_log
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Final video, stage outputs, QA contact sheets, and cost log are discoverable
+      - Metadata does not overclaim pixel-perfect preservation
+    success_criteria:
+      - Export package contains the final video and provenance artifacts

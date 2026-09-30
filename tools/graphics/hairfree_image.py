@@ -125,7 +125,7 @@ class HairfreeImage(BaseTool):
             "reference_images": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Reference image URLs, data URIs, or local paths for edit mode.",
+                "description": "Reference image URLs, data URIs, or local paths for edit or generation mode.",
             },
             "output_path": {"type": "string"},
         },
@@ -281,6 +281,11 @@ class HairfreeImage(BaseTool):
     def _has_reference_inputs(cls, inputs: dict[str, Any]) -> bool:
         return bool(cls._collect_reference_sources(inputs))
 
+    @staticmethod
+    def _encode_data_uri(data: bytes, mime_type: str) -> str:
+        encoded = base64.b64encode(data).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
     @classmethod
     def _build_edit_files(
         cls, inputs: dict[str, Any]
@@ -303,6 +308,18 @@ class HairfreeImage(BaseTool):
         output_format = inputs.get("output_format", "png")
         if output_format:
             payload["output_format"] = output_format
+
+        # The corporate gateway accepts reference images on the JSON
+        # generations endpoint. Normalize local paths and remote URLs to data
+        # URIs so the request remains self-contained and provider-readable.
+        reference_sources = HairfreeImage._collect_reference_sources(inputs)
+        if reference_sources:
+            payload["reference_images"] = [
+                HairfreeImage._encode_data_uri(
+                    *HairfreeImage._normalize_image_source(source)[::2]
+                )
+                for source in reference_sources
+            ]
         return payload
 
     @classmethod
@@ -336,9 +353,12 @@ class HairfreeImage(BaseTool):
         return cost_map.get(quality, 0.053) * n
 
     def _choose_mode(self, inputs: dict[str, Any]) -> str:
+        requested = str(inputs.get("generation_mode", "")).strip().lower()
+        if requested in {"generate", "edit"}:
+            return requested
         if self._has_reference_inputs(inputs):
             return "edit"
-        return str(inputs.get("generation_mode", "generate"))
+        return "generate"
 
     def _finalize_image_response(
         self,

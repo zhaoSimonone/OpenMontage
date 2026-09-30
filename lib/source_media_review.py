@@ -53,7 +53,9 @@ def _probe_video(path: Path, tool_registry: Any) -> dict[str, Any]:
         logger.warning("audio_probe failed for %s: %s", path, e)
 
     # If audio_probe didn't work, try ffprobe directly
-    if not result["technical_probe"]:
+    # audio_probe intentionally returns a compact audio-centric shape. For a
+    # video source, enrich it with the video stream fields from ffprobe too.
+    if not result["technical_probe"] or "resolution" not in result["technical_probe"]:
         try:
             import subprocess
             cmd = [
@@ -67,7 +69,7 @@ def _probe_video(path: Path, tool_registry: Any) -> dict[str, Any]:
                 streams = probe_data.get("streams", [])
                 video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
                 audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), {})
-                result["technical_probe"] = {
+                fallback_probe = {
                     "duration_seconds": float(fmt.get("duration", 0)),
                     "resolution": f"{video_stream.get('width', '?')}x{video_stream.get('height', '?')}",
                     "fps": _parse_fps(video_stream.get("r_frame_rate", "0/1")),
@@ -78,6 +80,10 @@ def _probe_video(path: Path, tool_registry: Any) -> dict[str, Any]:
                     "file_size_bytes": int(fmt.get("size", 0)),
                     "bitrate_kbps": round(int(fmt.get("bit_rate", 0)) / 1000, 1),
                 }
+                if result["technical_probe"]:
+                    result["technical_probe"].update(fallback_probe)
+                else:
+                    result["technical_probe"] = fallback_probe
         except Exception as e:
             logger.warning("ffprobe failed for %s: %s", path, e)
             result["quality_risks"].append(f"Could not probe file: {e}")
@@ -90,11 +96,16 @@ def _probe_video(path: Path, tool_registry: Any) -> dict[str, Any]:
             timestamps = _sample_timestamps(duration, count=4)
             sample_result = frame_sampler.execute({
                 "input_path": str(path),
+                "strategy": "timestamps",
                 "timestamps": timestamps,
                 "output_dir": str(path.parent / ".source_review_frames"),
             })
             if sample_result.success:
-                result["representative_frames"] = sample_result.data.get("frame_paths", [])
+                frames = sample_result.data.get("frame_paths") or sample_result.data.get("frames", [])
+                result["representative_frames"] = [
+                    frame.get("path", frame) if isinstance(frame, dict) else frame
+                    for frame in frames
+                ]
     except Exception as e:
         logger.warning("frame_sampler failed for %s: %s", path, e)
 
@@ -279,7 +290,7 @@ def review_source_media(
         if media_type == "video":
             dur = probe.get("duration_seconds", 0)
             res = probe.get("resolution", "unknown")
-            has_audio = bool(probe.get("audio_codec"))
+            has_audio = bool(probe.get("audio_codec") or probe.get("audio"))
             entry["content_summary"] = (
                 f"Video file: {dur:.1f}s at {res}, "
                 f"{'with' if has_audio else 'without'} audio"

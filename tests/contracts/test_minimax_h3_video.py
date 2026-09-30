@@ -11,7 +11,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
-from tools.video.minimax_h3_video import MiniMaxH3Video
+from tools.video.minimax_h3_video import MiniMaxH3Video, MiniMaxTaskError
 
 
 def test_inherits_base_tool():
@@ -198,6 +198,22 @@ def test_no_key_returns_error(monkeypatch):
     result = MiniMaxH3Video().execute({"prompt": "test"})
     assert result.success is False
     assert "MINIMAX_H3_API_KEY" in result.error
+
+
+def test_task_failure_preserves_task_id_and_phase(monkeypatch):
+    monkeypatch.setenv("MINIMAX_H3_API_KEY", "fake-key")
+    tool = MiniMaxH3Video()
+
+    def fail(_inputs, *, api_key):
+        raise MiniMaxTaskError("download failed", task_id="task-123", phase="download")
+
+    monkeypatch.setattr(tool, "_generate", fail)
+    result = tool.execute({"prompt": "test"})
+
+    assert result.success is False
+    assert result.data == {"phase": "download", "task_id": "task-123"}
+    assert "task-123" in result.error
+    assert "download" in result.error
 
 
 def test_registry_discovers_minimax_h3_video(monkeypatch, isolated_tool_registry):

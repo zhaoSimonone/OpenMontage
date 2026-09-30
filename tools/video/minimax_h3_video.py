@@ -33,6 +33,15 @@ _FINAL_STATUSES = {"succeed", "succeeded", "success", "completed", "done", "fini
 _FAILED_STATUSES = {"fail", "failed", "cancelled", "canceled", "error"}
 
 
+class MiniMaxTaskError(RuntimeError):
+    """Failure with enough provenance to distinguish API and local phases."""
+
+    def __init__(self, message: str, *, task_id: str | None = None, phase: str = "unknown"):
+        super().__init__(message)
+        self.task_id = task_id
+        self.phase = phase
+
+
 class MiniMaxH3Video(BaseTool):
     name = "minimax_h3_video"
     version = "0.1.0"
@@ -273,6 +282,19 @@ class MiniMaxH3Video(BaseTool):
         start = time.time()
         try:
             result = self._generate(inputs, api_key=api_key)
+        except MiniMaxTaskError as exc:
+            details: dict[str, Any] = {"phase": exc.phase}
+            if exc.task_id:
+                details["task_id"] = exc.task_id
+            provenance = f" (phase={exc.phase}"
+            if exc.task_id:
+                provenance += f", task_id={exc.task_id}"
+            provenance += ")"
+            return ToolResult(
+                success=False,
+                data=details,
+                error=f"MiniMax-H3 video generation failed{provenance}: {self._safe_error(exc)}",
+            )
         except Exception as exc:
             return ToolResult(
                 success=False,
@@ -287,31 +309,50 @@ class MiniMaxH3Video(BaseTool):
 
         from tools.video._shared import probe_output
 
-        payload = self._build_payload(inputs)
-        task_id = self._submit_task(
-            payload,
-            api_key=api_key,
-            timeout_seconds=int(inputs.get("submit_timeout_seconds", 180)),
-        )
-        task = self._poll_task(
-            task_id,
-            api_key=api_key,
-            poll_interval=float(inputs.get("poll_interval_seconds", 10.0)),
-            timeout_seconds=int(inputs.get("timeout_seconds", 900)),
-            request_timeout_seconds=int(inputs.get("query_timeout_seconds", 60)),
-        )
-        video_url = self._extract_video_url(task)
-        if not video_url:
-            raise RuntimeError(f"MiniMax-H3 task succeeded but returned no video URL: {task}")
+        task_id: str | None = None
+        phase = "build_payload"
+        try:
+            payload = self._build_payload(inputs)
+            phase = "submit"
+            task_id = self._submit_task(
+                payload,
+                api_key=api_key,
+                timeout_seconds=int(inputs.get("submit_timeout_seconds", 180)),
+            )
+            phase = "poll"
+            task = self._poll_task(
+                task_id,
+                api_key=api_key,
+                poll_interval=float(inputs.get("poll_interval_seconds", 10.0)),
+                timeout_seconds=int(inputs.get("timeout_seconds", 900)),
+                request_timeout_seconds=int(inputs.get("query_timeout_seconds", 60)),
+            )
+            phase = "download"
+            video_url = self._extract_video_url(task)
+            if not video_url:
+                raise RuntimeError(f"MiniMax-H3 task succeeded but returned no video URL: {task}")
 
-        download = requests.get(video_url, timeout=180)
-        download.raise_for_status()
+            download = requests.get(video_url, timeout=180)
+            download.raise_for_status()
 
-        output_path = Path(inputs.get("output_path") or f"minimax_h3_{task_id}.mp4")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(download.content)
+            output_path = Path(inputs.get("output_path") or f"minimax_h3_{task_id}.mp4")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            # Keep each task's temporary download distinct and publish atomically.
+            part_path = output_path.with_name(f"{output_path.name}.{task_id}.part")
+            try:
+                part_path.write_bytes(download.content)
+                probed = probe_output(part_path)
+                part_path.replace(output_path)
+            finally:
+                if part_path.exists():
+                    part_path.unlink()
+        except MiniMaxTaskError:
+            raise
+        except Exception as exc:
+            raise MiniMaxTaskError(
+                self._safe_error(exc), task_id=task_id, phase=phase
+            ) from exc
 
-        probed = probe_output(output_path)
         task_obj = task.get("task", task) if isinstance(task, dict) else {}
         return ToolResult(
             success=True,

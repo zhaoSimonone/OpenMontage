@@ -97,6 +97,7 @@ Each tool's `agent_skills[]` field bridges Layer 1 → Layer 3. See `skills/INDE
 | `localization-dub` | `pipeline_defs/localization-dub.yaml` | Localization and dubbing |
 | `reference-dance` | `pipeline_defs/reference-dance.yaml` | Reference-driven dance performance |
 | `reference-performance` | `pipeline_defs/reference-performance.yaml` | Reference-driven character action and facial performance |
+| `video-character-edit` | `pipeline_defs/video-character-edit.yaml` | Source-video outfit, hairstyle, and face identity editing |
 | `framework-smoke` | `pipeline_defs/framework-smoke.yaml` | Test harness |
 
 ## When Building New Pipelines

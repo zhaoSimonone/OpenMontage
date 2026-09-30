@@ -90,3 +90,23 @@ def test_upload_fails_before_network_for_missing_file(monkeypatch, tmp_path: Pat
     result = TencentCosUpload().execute({"local_path": str(tmp_path / "missing.png")})
     assert not result.success
     assert "not found" in result.error
+
+
+def test_csv_credentials_file_supplies_secret_pair(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("TENCENT_COS_SECRET_ID", raising=False)
+    monkeypatch.delenv("TENCENT_COS_SECRET_KEY", raising=False)
+    monkeypatch.setenv("TENCENT_COS_BUCKET", "public-cos-1257258774")
+    credentials = tmp_path / "sub-user.csv"
+    credentials.write_text(
+        "\ufeffUsername,Password,SecretId,SecretKey,LoginURL\n"
+        "u,p,csv-secret-id,csv-secret-key,https://cloud.tencent.com/\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TENCENT_COS_CREDENTIALS_FILE", str(credentials))
+
+    config = TencentCosUpload._resolved_config_values({})
+
+    assert config["secret_id"] == "csv-secret-id"
+    assert config["secret_key"] == "csv-secret-key"
+    assert config["credentials_file_error"] == ""
+    assert TencentCosUpload().get_status() == ToolStatus.AVAILABLE
