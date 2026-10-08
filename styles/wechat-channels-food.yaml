@@ -1,0 +1,65 @@
+identity:
+  name: "WeChat Channels Food"
+  category: custom
+  mood: warm, appetizing, cute-home-cooking, steam-and-sauce
+  pace: moderate
+  best_for: "微信视频号美食教程、家常菜剪辑、竖屏口播+实拍"
+
+visual_language:
+  color_palette:
+    primary: ["#662C18", "#E82E4A"]
+    accent: ["#FF5C84", "#FFE496"]
+    background: "#1B2420"
+    text: "#FFFAEC"
+    muted: "#6B7280"
+  composition: "9:16 vertical; food hero fills the frame; title in upper WeChat 3:4 crop; labels inside crop bottom-left"
+  texture: "photoreal food, gentle freshness grade, no harsh bloom"
+
+typography:
+  headings:
+    font: "ZCOOL KuaiLe / 站酷快乐体"
+    weight: 400
+    tracking: "-0.04em"
+  body:
+    font: "ZCOOL KuaiLe / 站酷快乐体"
+    weight: 400
+    line_height: 1.35
+  scale_system: "major_third"
+  weight_matrix:
+    title: 400
+    heading: 400
+    body: 400
+    caption: 400
+
+motion:
+  transitions: [cut, fade]
+  animation_style: "hard cuts on cooking actions; no decorative bounce on video; cover letters may bounce"
+  pacing_rules:
+    min_scene_hold_seconds: 1.2
+    max_scene_hold_seconds: 8
+    text_card_hold_seconds: 2.5
+    transition_duration_seconds: 0.2
+  entrance: "first frame is the hook shot, not a title card"
+  exit: "hold the plated dish 1-2s if the footage has it; otherwise last action beat"
+
+audio:
+  voice_style: "Doubao 小何 zh_female_xiaohe_uranus_bigtts, Mandarin home-cook, warm, clear, speech_rate 0"
+  music_mood: "light nostalgic instrumental under voice, e.g. summer-afternoon guitar/piano; never louder than VO"
+  music_volume: 0.12
+  sfx_style: "keep real sizzle/chop if present; do not fake studio whooshes"
+  ducking_threshold_db: -8
+
+asset_generation:
+  image_prompt_prefix: "photoreal Chinese home-cooked dish, steam, appetizing close-up, dark table, editorial food photo, no text, no letters, no watermark, "
+  image_negative_prompt: "text, letters, caption, watermark, logo, Japanese, English words, illustration, cartoon, extra utensils clutter, AI schematic label"
+  consistency_anchors:
+    - "Cover title is local 站酷快乐体 overlay, never baked into the generated photo"
+    - "WeChat 3:4 center-crop of 9:16 must contain title and labels"
+    - "Food looks fresh but not over-sharpened or blown-out"
+    - "Chinese only on cover and captions"
+
+quality_rules:
+  - "Do not invent a plated-dish shot the user did not film"
+  - "Lock TTS duration before burning subtitles; never retiming video after subtitle lock"
+  - "Cover must survive 视频号主页 3:4 crop and the 刚刚 badge"
+  - "Keep only the approved cover/video version unless the user asks to archive more"

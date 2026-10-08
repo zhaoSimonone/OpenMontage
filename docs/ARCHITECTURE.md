@@ -215,6 +215,7 @@ stages:
 | `podcast-repurpose` | hybrid | Podcast highlights to video |
 | `screen-demo` | screen_recording | Software screen recordings and walkthroughs |
 | `talking-head` | talking_head | Footage-led speaker videos |
+| `wechat-channels` | custom | WeChat Channels: footage cut, Mandarin VO, crop-aware cover |
 | `framework-smoke` | custom | Minimal smoke test for framework validation |
 
 ### Standard Stage Progression

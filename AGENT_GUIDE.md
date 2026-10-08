@@ -43,6 +43,7 @@ This is a first-class workflow in OpenMontage.
 
 - **Reference-driven request:** "make me something like this" -> use `video-reference-analyst.md`
 - **Source-footage request:** "edit this footage" / "cut this into clips" -> use `source_media_review` and the appropriate footage-led pipeline
+- **WeChat Channels / 视频号 request:** user provides cooking or lifestyle clips and wants 文案 + 配音 + 9:16 成片 + 封面 -> `pipeline_defs/wechat-channels.yaml` (crop-aware cover kit in `styles/wechat-channels-cover/`)
 - **Transform-splice request:** 「用视频1替换视频2的变装前段并锁定换装卡点」/ 变装前后状态分离与拼接 / 按画面状态把视频精确切分 —— pure-edit, no generation -> use `.agents/skills/transform-split/SKILL.md` (frame-exact cut-point lock + splice; 分析帧仅限检视，成片组装必须单趟 filter_complex 或无损 PNG，见其教训 8)
 - **Glitch-frame repair request:** "remove the leaked frames where hair/outfit doesn't match" (变装漏帧, e.g. 几帧白色头发+黑色上衣的人物) -> use `skills/creative/glitch-frame-removal.md` (frame-exact removal + 0.2s white-flash transition)
 
@@ -258,6 +259,7 @@ If the folder has tracks, the proposal and asset stages should present them as o
 | `hybrid` | Source footage plus support visuals | production |
 | `avatar-spokesperson` | Presenter-led avatar or lip-sync videos | production |
 | `localization-dub` | Subtitle, dub, and translated variants | beta |
+| `wechat-channels` | 微信视频号：实拍剪辑 + 文案配音 + 裁切感知封面 | beta |
 | `framework-smoke` | Test: minimal 2-stage smoke test | test |
 
 > **Beta pipelines** have not been fully audited. They work, but expect rough edges. Mention this when the user selects one.
@@ -637,6 +639,7 @@ Tool rules:
 | `flat-motion-graphics` | Social media, TikTok, startups |
 | `minimalist-diagram` | Technical deep-dives, architecture |
 | `ink-sketch` (Ink Theater) | Hand-drawn ink-on-white doodle animation; a character that draws itself, walks, dances; contraption explainers |
+| `wechat-channels-food` | 微信视频号美食/家常菜：竖屏、可爱封面、口播+实拍 |
 
 For custom, atelier, brand, launch, or hero work, read `skills/meta/taste-direction.md` before choosing a playbook. Carry its `taste_profile` into the proposal so later stages can preserve the design read, visual variance, motion intensity, information density, reference strategy, and anti-patterns.
 
@@ -690,6 +693,7 @@ The `.agents/skills/` directory is large. When you're not coming in through a to
 **When in doubt, read the category's meta routing file first:**
 - Picking an animation runtime? → `skills/meta/animation-runtime-selector.md` routes between Remotion primitives, GSAP plugins, framer-motion, Lottie, Manim, D3.
 - Picking a screen-recording mode (real capture vs synthetic terminal)? → `pipeline_defs/screen-demo.yaml` + `skills/pipelines/screen-demo/idea-director.md`.
+- 微信视频号成片（文案 / 配音 / 封面）? → `pipeline_defs/wechat-channels.yaml` + `skills/pipelines/wechat-channels/` + `styles/wechat-channels-cover/`.
 
 ## Quick Lookup
 

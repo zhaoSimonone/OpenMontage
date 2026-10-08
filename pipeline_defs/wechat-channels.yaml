@@ -1,0 +1,230 @@
+name: wechat-channels
+version: "1.0"
+description: >
+  Footage-led WeChat Channels (微信视频号) edit. User provides cooking or
+  lifestyle clips; the pipeline writes Mandarin copy, synthesizes Doubao 小何
+  voiceover (zh_female_xiaohe_uranus_bigtts), cuts a 9:16 video, and builds a
+  crop-aware cute cover. Cover typography is
+  local 站酷快乐体 overlay — never image-model text. Golden cover style lives
+  in styles/wechat-channels-cover/.
+category: custom
+stability: beta
+default_checkpoint_policy: guided
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/wechat-channels/executive-producer
+  budget_default_usd: 2.00
+  max_revisions_per_stage: 3
+  max_send_backs: 3
+  max_wall_time_minutes: 20
+
+extensions:
+  custom_scripts: true
+  custom_playbooks: true
+  custom_skills: true
+  custom_tools: false
+
+required_skills:
+  - pipelines/wechat-channels/executive-producer
+  - pipelines/wechat-channels/idea-director
+  - pipelines/wechat-channels/script-director
+  - pipelines/wechat-channels/scene-director
+  - pipelines/wechat-channels/asset-director
+  - pipelines/wechat-channels/edit-director
+  - pipelines/wechat-channels/compose-director
+  - pipelines/wechat-channels/publish-director
+  - pipelines/wechat-channels/cover-style
+  - pipelines/wechat-channels/xiaohe-tts
+  - creative/wechat-channels
+  - meta/reviewer
+  - meta/checkpoint-protocol
+
+compatible_playbooks:
+  recommended:
+    - wechat-channels-food
+  also_works:
+    - flat-motion-graphics
+  custom_allowed: true
+
+reference_input:
+  supported: true
+  analysis_depth: standard
+  analysis_tools:
+    - transcriber
+    - scene_detect
+    - frame_sampler
+
+stages:
+  - name: idea
+    skill: pipelines/wechat-channels/idea-director
+    optional_artifacts_in:
+      - source_media_review
+    produces:
+      - brief
+      - decision_log
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Source clips are inventoried (what was filmed vs missing, e.g. no plated dish)
+      - Target is 微信视频号 9:16 with crop-aware cover
+      - Title, hook, and cover style (golden 粉蒸排骨 look) are explicit
+      - Music plan is presented (library / search / generation / user track)
+    success_criteria:
+      - Schema-valid brief artifact
+      - Brief names source footage paths and 视频号 deliverables (video + 9:16/4:5 covers)
+
+  - name: script
+    skill: pipelines/wechat-channels/script-director
+    required_artifacts_in:
+      - brief
+    optional_artifacts_in:
+      - source_media_review
+    produces:
+      - script
+    optional_tools:
+      - transcriber
+    tools_available:
+      - transcriber
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Mandarin VO copy matches filmed steps only
+      - Hook in the first sentence; no 成片镜头 if the user did not shoot it
+      - Spoken length is realistic for TTS and the available shots
+      - 视频号 caption + hashtags drafted
+    success_criteria:
+      - Schema-valid script artifact
+      - Script sections are ordered to the footage, not to an invented recipe
+
+  - name: scene_plan
+    skill: pipelines/wechat-channels/scene-director
+    required_artifacts_in:
+      - script
+    optional_artifacts_in:
+      - brief
+    produces:
+      - scene_plan
+    optional_tools:
+      - frame_sampler
+      - scene_detect
+    tools_available:
+      - frame_sampler
+      - scene_detect
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Each VO beat maps to a real clip in/out
+      - 9:16 framing; ugly countdown/wait cards avoided or redesigned
+      - Cover hero source chosen (best frame vs generated food photo)
+    success_criteria:
+      - Schema-valid scene_plan artifact
+      - Every script beat has a footage source or an explicit insert card
+
+  - name: assets
+    skill: pipelines/wechat-channels/asset-director
+    required_artifacts_in:
+      - scene_plan
+    optional_artifacts_in:
+      - script
+    produces:
+      - asset_manifest
+    required_tools:
+      - tts_selector
+      - subtitle_gen
+    optional_tools:
+      - image_selector
+      - audio_mixer
+    tools_available:
+      - tts_selector
+      - subtitle_gen
+      - image_selector
+      - audio_mixer
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Hero cover sample shown against WeChat 3:4 crop + 刚刚 badge before batching
+      - Cover text is local font overlay, Chinese only
+      - Doubao 小何 sample approved (zh_female_xiaohe_uranus_bigtts); BGM ducked under VO
+      - Subtitle file timed to TTS, not to an unlocked video duration
+    success_criteria:
+      - Schema-valid asset_manifest artifact
+      - VO audio, subtitle file, and 9:16 + 4:5 covers exist on disk
+
+  - name: edit
+    skill: pipelines/wechat-channels/edit-director
+    required_artifacts_in:
+      - scene_plan
+      - asset_manifest
+    optional_artifacts_in:
+      - script
+    produces:
+      - edit_decisions
+    optional_tools:
+      - video_trimmer
+    tools_available:
+      - video_trimmer
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Picture is fitted to locked TTS duration (not the reverse after subtitles)
+      - Cuts land on action; no mid-pour or mid-chop orphans
+      - BGM loop/offset recorded
+    success_criteria:
+      - Schema-valid edit_decisions artifact
+      - Timeline duration matches VO (+ small tail hold)
+
+  - name: compose
+    skill: pipelines/wechat-channels/compose-director
+    required_artifacts_in:
+      - edit_decisions
+      - asset_manifest
+    optional_artifacts_in:
+      - scene_plan
+    produces:
+      - render_report
+      - final_review
+    required_tools:
+      - video_compose
+      - audio_mixer
+    optional_tools:
+      - color_grade
+      - video_trimmer
+      - video_stitch
+    tools_available:
+      - video_compose
+      - audio_mixer
+      - color_grade
+      - video_trimmer
+      - video_stitch
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - 9:16 1080x1920 playable output
+      - Subtitles stay in sync with VO
+      - Food grade is fresh but not harsh
+      - Covers exported beside the video
+    success_criteria:
+      - Schema-valid render_report artifact
+      - Output video exists and ffprobe reports 9:16
+
+  - name: publish
+    skill: pipelines/wechat-channels/publish-director
+    required_artifacts_in:
+      - render_report
+      - final_review
+    optional_artifacts_in:
+      - brief
+    produces:
+      - publish_log
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Export package has video + 9:16 cover + 4:5 cover + caption
+      - file:// links for the user
+      - Only the approved version retained if the user asked to save disk
+    success_criteria:
+      - Schema-valid publish_log artifact
+      - Export directory contains video, covers, and 视频号文案.txt
