@@ -49,6 +49,42 @@ description: |
      文件完成，全程无中间帧文件；
    - **无损 PNG 中间帧**：确需 Python 逐帧合成（定格/闪白/贴片）时，从源文件
      以 `-fps_mode passthrough` 抽 PNG，抽帧与组装共用这套 PNG。
+9. **分段画质对账禁用 psnr 滤镜直比 + PNG 中转，以原始平面为准**：psnr 滤镜
+   对含 concat/faststart 的成片与同图实时 filter_chain 参照配对时曾测得 35.9dB
+   伪影（同一像素 rawvideo 平面对比实为 50dB）；PNG 中转也会因 ffmpeg yuv→rgb
+   与 OpenCV rgb→yuv 矩阵不一致引入假差距。正确做法：双方各导出 rawvideo
+   yuv420p 平面，Python 按帧索引逐帧对账 PSNR。
+10. **闪光/白闪转场会让特征失灵——必须检查所有显著 spike，不能只靠 top-N**：
+    白色闪光帧（换装常用手法）的特征向量接近零（过曝=无颜色信息），导致 raw dist
+    在闪光帧本身上报为 0；但闪光前后的造型帧之间 dist 反而出现异常低谷。仅看 top-5
+    或 top-12 峰值会漏掉被闪光掩盖的真实换装点。真实事故：用户指出 5s 有换装，
+    特征 top-5 全部是机位跳变（0.5–0.6），真正的闪光换装（5s）被漏检。
+    应对：
+    - 第 3 步必须打印**所有 dist > 0.25** 的帧（不只是峰值最高的几个）；
+    - 若存在多簇相邻的高 dist 区域（跨度 > 10 帧），必须逐一核实画面；
+    - 当 dist 曲线在某个区间内出现**先升后降再升**的 W 形模式（闪光转场的典型特征），
+      无论峰值排名，都必须对那个区间做逐帧目视确认；
+    - 必要时直接查看用户指出的时间点前后 5 帧，不要完全依赖程序化检测。
+    - 规则：宁可多查，不能漏查。用户指出的时间点权重最高。
+
+11. **切割后文件 duration 不等于帧数/fps——必须加 `-t` 限制时长**：
+    用 `select` + `atrim` 切段时，`select` 滤镜正确输出了指定帧数的视频流，
+    `atrim` 正确裁到了音频时间点，但输出 MP4 的 `duration` 元数据字段（存储在
+    container header 中）并不会自动更新——它复用了解码器初始化时的默认值，
+    通常等于源文件时长。表现为：帧数正确（250f），但 `ffprobe -show_entries
+    format=duration` 显示的 duration 仍是源文件的 12.19s，而不是期望的 8.33s。
+    用户看到"变装前有12秒"会认为切错了。
+    应对：切割命令必须加 `-t ${前段时长}` 和 `-t ${后段时长}`，强制限制输出时长
+    等于帧数/fps。两段时长相加必须等于源文件总时长（±0.1s 内）。
+    示例（前段 P=250, FPS=30, 总帧 365）：
+    ```bash
+    PRE_DUR=$(python3 -c "print(P/FPS)" -- P=250)   # 8.333s
+    POST_DUR=$(python3 -c "print((365-P)/FPS)" -- P=250)  # 3.833s
+    ffmpeg -i INPUT.mp4 -filter_complex \
+      "[0:v]select='lt(n,250)',setpts=N/(30*TB)[v1];[0:a]atrim=0:8.317,asetpts=PTS-STARTPTS[a1]" \
+      -map "[v1]" -map "[a1]" -c:v libx264 -crf 16 -preset slow -pix_fmt yuv420p \
+      -movflags +faststart -t 8.333333 out.mp4
+    ```
 
 ## 执行流程
 
@@ -82,8 +118,9 @@ ffmpeg -y -v error -i INPUT.mp4 -vf "scale=135:240,tile=8x5:padding=2:color=whit
 # 距离 spike 点 = 候选切换点；无 spike 的区间 = 同一造型
 ```
 
-- 打印全时间轴的特征曲线，**所有** dist spike 都是候选切换点（阈值按实际数据调，
-  真实换装通常 >1.0，姿势切换 <0.35，但必须目视核实每个候选，见第 4 步）
+- **必须打印所有 dist > 0.25 的帧**（不得只打印 top-N，闪光转场换装可能被 top-N 遗漏）
+- 若存在多簇 dist 峰值区域，逐一标注帧号并用第 4 步逐帧核实
+- W 形 dist 模式（先升后降再升）是闪光转场的典型特征，无论峰值排名必须核实
 - 同一造型内部 dist 应全程平稳；若某区间内仍有多个候选点，说明可能是穿插剪辑
 
 ### 第 4 步：边界逐帧目视确认 + 稳定性规则
@@ -156,7 +193,7 @@ ffmpeg -i INPUT.mp4 -filter_complex "\
 - [ ] post_start_frame 满足连续 ≥4 帧稳定 POST，TRANSITION 帧未计入
 - [ ] 切割用 select/trim + 重编码，未用 -c copy、未用 -ss 单帧抽帧做依据
 - [ ] 成片组装源为单趟 filter_complex 或无损 PNG；全链路无 JPG 中间帧（教训 8）
-- [ ] 帧数对账相等
+- [ ] 帧数对账相等，且两段时长相加 ≈ 源总时长（±0.1s）
 - [ ] 100% 最近参考分类 0 违规
 - [ ] 成片 vs 源直解帧 PSNR 抽查 ≥ 40dB（无多余压缩代）
 - [ ] 全帧拼贴图已交付到输出目录
