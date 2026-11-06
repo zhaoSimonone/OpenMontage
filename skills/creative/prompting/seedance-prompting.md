@@ -155,3 +155,28 @@ wind through temple, distant wingbeats, leather staff-grip creak.
 ```
 
 Parameters: `duration=10`, `aspect_ratio=21:9`, `resolution=720p`, `model_variant=standard`, `generate_audio=true`, seed locked after shot 2.
+
+## Video edit: replace face and hair, keep source motion
+
+Generation prompts above are for new shots. Identity edit on an existing clip
+is a different task. Follow the official Seedance 2.5 / 2.0 series guide
+(https://docs.volcengine.com/docs/ark/seedance-2-5?lang=zh):
+
+1. Prompt must contain an edit keyword: `视频编辑` / `替换` / `修改` / `改成`.
+2. Address assets as `@视频1` and `@图片1` (or `@video1` / `@image1`).
+3. Say what each asset provides and what to ignore. Do not over-describe a
+   clear still.
+4. Bind `reference_video` + `reference_image` in the same call.
+5. `duration=-1`, `aspect_ratio=adaptive`. ToAPIs Fast max `720p`.
+6. Official Ark also sets `omni_reference_task_type=edit`.
+
+Canonical one-shot template:
+
+```text
+视频编辑：把 @视频1 中人物的整张脸和发型替换为 @图片1 中的同一位成年女性身份和蓝色高马尾。
+仅修改脸与发型，其余构图、机位、光线、服装、动作、口型和时间轴保持与 @视频1 一致。
+@图片1 只提供人脸身份、妆容和发型，忽略衣服、身体、背景和静态表情。
+```
+
+Layer 3 workflow: `.agents/skills/seedance-identity-edit/SKILL.md`.
+Layer 2: `skills/creative/seedance-identity-edit.md`.

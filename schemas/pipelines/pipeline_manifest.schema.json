@@ -38,6 +38,24 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "production_modes": {
+      "type": "array",
+      "description": "Supported production modes and their capture/render requirements",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "required_tools": { "type": "array", "items": { "type": "string" } },
+          "optional_tools": { "type": "array", "items": { "type": "string" } },
+          "scene_type": { "type": "string" },
+          "agent_skills": { "type": "array", "items": { "type": "string" } },
+          "best_for": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
     "stages": {
       "type": "array",
       "items": {

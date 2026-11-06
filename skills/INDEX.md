@@ -97,6 +97,7 @@ Key capability families to look for in the output:
 | Data Visualization | `creative/data-visualization.md` | Chart type selection, animation, label placement | `d3-viz`, `remotion-best-practices` |
 | Video Stitching | `creative/video-stitching.md` | Multi-clip assembly, AI clip chaining, spatial composition | `ffmpeg`, `video-toolkit` |
 | Glitch Frame Removal | `creative/glitch-frame-removal.md` | AI transformation-clip leak frames (hair/outfit mismatch) — frame-exact removal + 0.2s white-flash transition, synced audio | `ffmpeg`, `video-toolkit` |
+| Seedance Identity Edit | `creative/seedance-identity-edit.md` | Keep source motion/clothes; replace face+hair with a reference still via Seedance video+image edit | `seedance-identity-edit`, `seedance-2-0` |
 | Video Gen Prompting | `creative/video-gen-prompting.md` | Universal video generation prompt vocabulary; **canonical 5-aspect spec** (Subject / Motion / Scene / Spatial / Camera); ~200 cinematography primitives | `ai-video-gen`, `ltx2`, `create-video` |
 | â†³ Seedance Prompting | `creative/prompting/seedance-prompting.md` | **Preferred premium default.** Seedance 2.0 8-component structure, multi-shot, lip-sync, reference-to-video | `seedance-2-0`, `ai-video-gen` |
 | â†³ Grok Prompting | `creative/prompting/grok-prompting.md` | Grok image/video prompting, edit flows, reference-image video | `grok-media` |
@@ -321,4 +322,5 @@ Claude Code accesses them via symlinks in `.claude/skills/`.
 | **AI Video (HeyGen)** | `heygen`, `avatar-video`, `create-video`, `faceswap`, `ai-video-gen`, `video-download`, `video-edit`, `video-translate`, `video-understand`, `visual-style` | `heygen-com/skills` |
 | **AI Video/Image/TTS/Avatar (Kling Official)** | `kling-official` - official direct API auth, Classic/Turbo/Omni task protocols, multi-reference Omni syntax, internal Elements/Account Usage helpers, callback notes, TTS voice parameters, avatar/lip-sync face selection, error handling, and cost governance for `kling_official_video` / `kling_official_image` / `kling_tts` / `kling_avatar` / `kling_lip_sync` | Local OpenMontage skill |
 | **AI Video (Premium)** | `seedance-2-0` — preferred premium default (cinematic, trailer, multi-shot, lip-sync, synced audio); accessed via `seedance_video` (fal.ai) or `heygen_video` Avatar Shots | Local OpenMontage skill |
+| **AI Video (Identity Edit)** | `seedance-identity-edit` — one-shot Seedance face+hair replacement that keeps source motion and clothing; ToAPIs `seedance-2-fast` or official Ark edit | Local OpenMontage skill |
 | **Infrastructure** | `acestep`, `ltx2`, `playwright-recording` | `digitalsamba/claude-code-video-toolkit` |

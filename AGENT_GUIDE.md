@@ -46,6 +46,7 @@ This is a first-class workflow in OpenMontage.
 - **WeChat Channels / 视频号 request:** user provides cooking or lifestyle clips and wants 文案 + 配音 + 9:16 成片 + 封面 -> `pipeline_defs/wechat-channels.yaml` (crop-aware cover kit in `styles/wechat-channels-cover/`)
 - **Transform-splice request:** 「用视频1替换视频2的变装前段并锁定换装卡点」/ 变装前后状态分离与拼接 / 按画面状态把视频精确切分 —— pure-edit, no generation -> use `.agents/skills/transform-split/SKILL.md` (frame-exact cut-point lock + splice; 分析帧仅限检视，成片组装必须单趟 filter_complex 或无损 PNG，见其教训 8)
 - **Glitch-frame repair request:** "remove the leaked frames where hair/outfit doesn't match" (变装漏帧, e.g. 几帧白色头发+黑色上衣的人物) -> use `skills/creative/glitch-frame-removal.md` (frame-exact removal + 0.2s white-flash transition)
+- **Seedance identity-edit request:** 「把视频里的人脸和发型换成参考图，动作服装不要变」 / face+hair swap on an existing clip via Seedance -> use `.agents/skills/seedance-identity-edit/SKILL.md` (one-shot video+image bind; not pixel-exact CapCut)
 
 If a model misses this distinction, it will often fall back to plain search + guesswork. That is incorrect for OpenMontage.
 
@@ -688,7 +689,7 @@ The `.agents/skills/` directory is large. When you're not coming in through a to
 | **Avatar / lip-sync** | `avatar-video`, `heygen`, `create-video`, `faceswap`, `video-translate`, `agents` |
 | **Capture** | `playwright-recording` (browser flows), `ffmpeg` (post) |
 | **Visualization** | `beautiful-mermaid`, `d3-viz`, `manim-composer`, `manimce-best-practices`, `manimgl-best-practices` |
-| **Media editing** | `video-edit`, `transform-split` (变装/状态视频按前/后帧级精确分割), `video-download`, `video-understand`, `video-toolkit`, `visual-style` |
+| **Media editing** | `video-edit`, `transform-split` (变装/状态视频按前/后帧级精确分割), `seedance-identity-edit` (source clip face+hair swap, keep motion/clothes), `video-download`, `video-understand`, `video-toolkit`, `visual-style` |
 
 **When in doubt, read the category's meta routing file first:**
 - Picking an animation runtime? → `skills/meta/animation-runtime-selector.md` routes between Remotion primitives, GSAP plugins, framer-motion, Lottie, Manim, D3.
