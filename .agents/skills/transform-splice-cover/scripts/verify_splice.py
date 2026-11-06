@@ -94,7 +94,29 @@ N = len(final)
 cluster = cv2.imread(f"{LAY}/cluster.png", cv2.IMREAD_UNCHANGED)
 tfill = cv2.imread(f"{LAY}/title_fill.png", cv2.IMREAD_UNCHANGED)
 tstroke = cv2.imread(f"{LAY}/title_stroke.png", cv2.IMREAD_UNCHANGED)
-CB, FB, SB = geom["CLUSTER_BBOX"], geom["TITLE_FILL_BBOX"], geom["TITLE_STROKE_BBOX"]
+CB, FB, SB = (geom.get("CLUSTER_BBOX"), geom.get("TITLE_FILL_BBOX"),
+              geom.get("TITLE_STROKE_BBOX"))
+
+# v2 writes an ordered plate manifest; use it when present so the checks
+# follow exactly the layers that were actually composited.
+PLATES = geom.get("PLATES")
+if PLATES is not None:
+    plate_imgs = []
+    for p in PLATES:
+        im = cv2.imread(f"{LAY}/{p['file']}", cv2.IMREAD_UNCHANGED)
+        plate_imgs.append((im, p["bbox"], p["name"],
+                           p.get("from", 0), p.get("to", 10 ** 9)))
+    CB = next((p[1] for p in plate_imgs if p[2] == "cluster"), CB)
+    FB = next((p[1] for p in plate_imgs if p[2].startswith("title")), FB)
+    SB = FB
+    cluster = tfill = tstroke = None
+else:
+    cluster = cv2.imread(f"{LAY}/cluster.png", cv2.IMREAD_UNCHANGED)
+    tfill = cv2.imread(f"{LAY}/title_fill.png", cv2.IMREAD_UNCHANGED)
+    tstroke = cv2.imread(f"{LAY}/title_stroke.png", cv2.IMREAD_UNCHANGED)
+    plate_imgs = [(cluster, CB, "cluster", 0, 10 ** 9),
+                  (tstroke, SB, "title_stroke", 0, 10 ** 9),
+                  (tfill, FB, "title_fill", 0, 10 ** 9)]
 
 # ---- 3. POST fidelity ----
 psnr, maxd = [], []
@@ -110,7 +132,10 @@ rep["post_section"] = {"frames_checked": len(psnr),
                        "max_abs_diff": max(maxd) if maxd else None}
 print(f"POST PSNR min={min(psnr):.2f} mean={np.mean(psnr):.2f} maxdiff={max(maxd):.0f}")
 
-# ---- 5. action phase ----
+# ---- 5. action phase -------------------------------------------------
+# Compare the reel's PRE motion signature against the MOTION SIGNATURE OF THE
+# MAPPED video1 frames -- not against video1's own timeline, which would
+# measure the fps conversion instead of the choreography.
 def sig(frames):
     out, prev = [], None
     for f in frames:
@@ -121,19 +146,25 @@ def sig(frames):
     return np.array(out)
 
 
-s_reel, s_v1 = sig(reel[:C]), sig(v1)
+s_reel = sig(reel[:C])
+s_v1_mapped = sig([v1[mapping[k]] for k in range(C)])
 cors = []
 for lag in range(-3, 4):
     a, b = [], []
-    for i in range(len(s_v1)):
+    for i in range(len(s_v1_mapped)):
         j = i + lag
         if 0 <= j < len(s_reel):
-            a.append(s_v1[i]); b.append(s_reel[j])
+            a.append(s_v1_mapped[i]); b.append(s_reel[j])
     if len(a) >= 40:
         cors.append({"lag": lag, "corr": round(float(np.corrcoef(a, b)[0, 1]), 4)})
 cors.sort(key=lambda c: -c["corr"])
 rep["action_phase"] = {"correlations": cors,
-                       "note": "lag = reel_pre_index - v1_index; mapping uses floor(k*N1/C)"}
+                       "note": "reel_pre motion signature vs the MAPPED video1 frames; "
+                               "lag = reel_pre_index - output_index",
+                       "best_lag": cors[0]["lag"] if cors else None,
+                       "best_corr": cors[0]["corr"] if cors else None}
+print(f"action phase: best lag {rep['action_phase']['best_lag']} "
+      f"corr {rep['action_phase']['best_corr']}")
 
 # ---- 7. protection zone ----
 rep["protection_zone"] = {"pre_encode": pz,
@@ -142,15 +173,21 @@ rep["protection_zone"] = {"pre_encode": pz,
 print(f"protection zone pre-encode max|diff| outside overlay = {pz.get('max_abs_diff_outside_overlay')}")
 
 # ---- 8. overlay geometry ----
+# A reel with no burned-in overlay at all is a legitimate outcome (skill 5.1
+# item 6): report zero layers instead of crashing on the digit manifest.
+_dboxes = dm.get("boxes") or []
 rep["overlay_geometry"] = {"cluster_bbox": CB, "title_fill_bbox": FB, "title_stroke_bbox": SB,
                            "cluster_fixed": True, "title_fixed": True,
-                           "digit_boxes_first": dm["boxes"][0], "digit_boxes_last": dm["boxes"][C - 1],
-                           "digit_windows": geom["DIGIT_WINDOWS"]}
+                           "plate_count": len(plate_imgs),
+                           "digit_boxes_first": _dboxes[0] if _dboxes else None,
+                           "digit_boxes_last": _dboxes[C - 1] if len(_dboxes) > C - 1 else None,
+                           "digit_windows": geom.get("DIGIT_WINDOWS", [])}
 
 # ---- 9. text alpha hygiene ----
 ta = np.zeros((H, W), np.uint8)
-ta[SB[1]:SB[3], SB[0]:SB[2]] = tstroke[:, :, 3]
-ta[FB[1]:FB[3], FB[0]:FB[2]] |= tfill[:, :, 3]
+for lay, bb, nm, _pf, _pt in plate_imgs:
+    if nm.startswith("title"):
+        ta[bb[1]:bb[3], bb[0]:bb[2]] = lay[:, :, 3]
 n, l, st, _ = cv2.connectedComponentsWithStats((ta > 40).astype(np.uint8), 8)
 small = [{"area": int(st[j, 4])} for j in range(1, n) if st[j, 4] < 40]
 rep["text_alpha"] = {"components": int(n - 1), "tiny_components_under_40px": len(small),
@@ -173,7 +210,7 @@ for t in range(C):
             changes.append({"t": t, "kind": "bbox_change"})
     prev = a
 rep["dynamic_digit"] = {"n_changes": len(changes), "content_changes": changes[:40],
-                        "windows": geom["DIGIT_WINDOWS"]}
+                        "windows": geom.get("DIGIT_WINDOWS", [])}
 
 # ---- 11. restoration residual vs x264 floor ----
 med_path = f"{QA}/pre_median.png"
@@ -193,11 +230,9 @@ if os.path.exists(med_path):
         return base
 
     rec = med.copy()
-    rec = ov(rec, cluster, CB[0], CB[1])
-    rec = ov(rec, tstroke, SB[0], SB[1])
-    rec = ov(rec, tfill, FB[0], FB[1])
     union = np.zeros((H, W), np.uint8)
-    for lay, bb in ((cluster, CB), (tfill, FB), (tstroke, SB)):
+    for lay, bb, _nm, _pf, _pt in plate_imgs:
+        rec = ov(rec, lay, bb[0], bb[1])
         union[bb[1]:bb[3], bb[0]:bb[2]] |= (lay[:, :, 3] > 0).astype(np.uint8)
     inside = cv2.erode(union, np.ones((7, 7), np.uint8)) > 0
     resid = np.abs(rec - med).max(axis=2)
@@ -215,8 +250,9 @@ if os.path.exists(med_path):
 
 # ---- 12. glyph fidelity vs the original ----
 gm = np.zeros((H, W), bool)
-gm[FB[1]:FB[3], FB[0]:FB[2]] |= tfill[:, :, 3] > 0
-gm[SB[1]:SB[3], SB[0]:SB[2]] |= tstroke[:, :, 3] > 0
+for lay, bb, nm, _pf, _pt in plate_imgs:
+    if nm.startswith("title"):
+        gm[bb[1]:bb[3], bb[0]:bb[2]] |= lay[:, :, 3] > 0
 if gm.sum():
     pa = reel[0][gm].astype(np.int16)
     pb = final[0][gm].astype(np.int16)
@@ -224,8 +260,31 @@ if gm.sum():
     rep["glyph_fidelity"] = {"pixels": int(gm.sum()), "mean_abs_diff": round(float(d.mean()), 2),
                               "p95_abs_diff": int(np.percentile(d, 95)),
                               "over_60_pct": round(float(100 * (d > 60).mean()), 2)}
+    # Split the metric: the OPAQUE core of the plate must reproduce the
+    # original glyph; the 1-2 px antialiased rim cannot, because the sticker
+    # now sits on a different subject and a partial alpha blends with the new
+    # background.  That difference is inherent, not a defect (skill 4.6).
+    opaque = np.zeros((H, W), bool)
+    rim = np.zeros((H, W), bool)
+    for lay, bb, nm, _pf, _pt in plate_imgs:
+        if nm.startswith("title"):
+            a = lay[:, :, 3]
+            opaque[bb[1]:bb[3], bb[0]:bb[2]] |= (a == 255)
+            rim[bb[1]:bb[3], bb[0]:bb[2]] |= (a > 0) & (a < 255)
+    for nm2, m in (("opaque_core", opaque & gm), ("antialiased_rim", rim & gm)):
+        if m.sum() == 0:
+            continue
+        dd = np.abs(reel[0][m].astype(np.int16) - final[0][m].astype(np.int16)).max(axis=1)
+        rep["glyph_fidelity"][nm2] = {
+            "pixels": int(m.sum()), "mean_abs_diff": round(float(dd.mean()), 2),
+            "over_60_pct": round(float(100 * (dd > 60).mean()), 2)}
     print(f"glyph fidelity: n={int(gm.sum())} mean|diff|={d.mean():.2f} "
           f"p95={np.percentile(d,95):.0f} >60: {100*(d>60).mean():.2f}%")
+    for nm2 in ("opaque_core", "antialiased_rim"):
+        if nm2 in rep["glyph_fidelity"]:
+            g = rep["glyph_fidelity"][nm2]
+            print(f"   {nm2}: n={g['pixels']} mean|diff|={g['mean_abs_diff']} "
+                  f">60: {g['over_60_pct']}%")
 
 # ---- 13. audio ----
 am_f, am_r = audio_md5(FINAL), audio_md5(REEL)

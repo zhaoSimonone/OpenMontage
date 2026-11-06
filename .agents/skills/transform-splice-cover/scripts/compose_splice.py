@@ -3,12 +3,20 @@
 
 Pure edit, single final encode.
 
-  output frame k <  C  -> video1 frame  floor(k * N1 / C)  (monotonic time map,
-                          frame-copy resample; never a speed change, never AI
-                          inpainting or motion reconstruction)
+  output frame k <  C  -> video1 frame  floor(k * src_fps / out_fps)  (frame-copy
+                          resample that PRESERVES video1's native action speed;
+                          never a speed change, never AI inpainting or motion
+                          reconstruction)
                           + the reel's burned-in overlays re-composited at
                             their original coordinates
   output frame k >= C  -> the reel's original POST frame, untouched
+
+NOTE on the mapping: the older ``floor(k * N1 / C)`` stretched or squeezed
+video1 to fill C frames exactly.  When the two clips have different frame
+rates that is a real speed change, and it is what shifts the raise / fist /
+hands-together phase near the cut.  The skill mandates the frame-copy
+resample above: video1 keeps 1x speed, the fps difference is absorbed by
+duplicating frames, and the surplus tail frames are simply truncated.
 
 Stacking order of the source reel: artwork -> stroke -> coloured fill -> digit.
 
@@ -32,15 +40,34 @@ geom = json.load(open(f"{LAY}/overlay_geom.json"))
 dm = json.load(open(f"{LAY}/digit_meta.json"))
 C = geom["C"]
 W, H, FPS = geom["W"], geom["H"], geom["FPS"]
-CB = geom["CLUSTER_BBOX"]
-FB = geom["TITLE_FILL_BBOX"]
-SB = geom["TITLE_STROKE_BBOX"]
+CB = geom.get("CLUSTER_BBOX")
+FB = geom.get("TITLE_FILL_BBOX")
+SB = geom.get("TITLE_STROKE_BBOX")
 
-cluster = cv2.imread(f"{LAY}/cluster.png", cv2.IMREAD_UNCHANGED)
-tfill = cv2.imread(f"{LAY}/title_fill.png", cv2.IMREAD_UNCHANGED)
-tstroke = cv2.imread(f"{LAY}/title_stroke.png", cv2.IMREAD_UNCHANGED)
-for lay, nm in ((cluster, "cluster"), (tfill, "title_fill"), (tstroke, "title_stroke")):
-    assert lay is not None and lay.shape[2] == 4, f"bad layer {nm}"
+# v2 writes an ordered plate manifest; v1 used three fixed slots.
+PLATES = geom.get("PLATES")
+if PLATES is None:
+    PLATES = [{"name": "cluster", "file": "cluster.png", "bbox": CB},
+              {"name": "title_stroke", "file": "title_stroke.png", "bbox": SB},
+              {"name": "title_fill", "file": "title_fill.png", "bbox": FB}]
+plates = []
+for p in PLATES:
+    img = cv2.imread(f"{LAY}/{p['file']}", cv2.IMREAD_UNCHANGED)
+    assert img is not None and img.shape[2] == 4, f"bad plate {p['file']}"
+    # a static sticker only exists inside its own time window; the reel's
+    # timeline can switch overlays mid-shot, so the window is mandatory
+    plates.append((img, p["bbox"], p["name"],
+                   p.get("from", 0), p.get("to", 10 ** 9)))
+print(f"plates: {[(p[2], p[3], p[4]) for p in plates]}")
+
+
+def probe_fps(path):
+    out = subprocess.run(
+        ["/opt/homebrew/bin/ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", path],
+        capture_output=True, text=True).stdout.strip()
+    num, den = out.split("/")
+    return float(num) / float(den)
 
 
 def overlay(base, layer, x0, y0):
@@ -74,10 +101,20 @@ reel = read_all(REEL)
 N1, N = len(v1), len(reel)
 print(f"v1 {N1} frames, reel {N} frames, C={C}")
 
-# monotonic time mapping: output k <- floor(k * N1 / C)
-mapping = [min(int(np.floor(k * N1 / C)), N1 - 1) for k in range(C)]
-print(f"mapping: {C} out frames <- {N1} src, {len(set(mapping))} distinct "
-      f"({C - len(set(mapping))} duplicated)")
+# ---- scale video1 to the reel's raster (uniform; never a person stretch) --
+if v1[0].shape[0] != H or v1[0].shape[1] != W:
+    sx, sy = W / v1[0].shape[1], H / v1[0].shape[0]
+    print(f"scaling video1 {v1[0].shape[1]}x{v1[0].shape[0]} -> {W}x{H} "
+          f"(x{sx:.4f} / y{sy:.4f}, uniform={abs(sx-sy) < 1e-6})")
+    v1 = [cv2.resize(f, (W, H), interpolation=cv2.INTER_CUBIC) for f in v1]
+
+# ---- frame-copy resample: keep video1 at its native 1x speed -------------
+SRC_FPS = probe_fps(V1)
+OUT_FPS = probe_fps(REEL)
+mapping = [min(int(np.floor(k * SRC_FPS / OUT_FPS)), N1 - 1) for k in range(C)]
+print(f"fps: video1={SRC_FPS} reel={OUT_FPS} -> output k <- floor(k*{SRC_FPS}/{OUT_FPS}); "
+      f"{len(set(mapping))} distinct source frames "
+      f"({C - len(set(mapping))} duplicated, {N1 - 1 - mapping[-1]} tail frames truncated)")
 
 digits = {}
 for t in range(C):
@@ -90,9 +127,9 @@ def compose(k, with_overlay=True):
     if k < C:
         img = v1[mapping[k]].copy()
         if with_overlay:
-            img = overlay(img, cluster, CB[0], CB[1])
-            img = overlay(img, tstroke, SB[0], SB[1])
-            img = overlay(img, tfill, FB[0], FB[1])
+            for lay, bb, _nm, pf, pt in plates:
+                if pf <= k <= pt:
+                    img = overlay(img, lay, bb[0], bb[1])
             d = digits.get(k)
             if d is not None:
                 b = dm["boxes"][k]
@@ -102,8 +139,9 @@ def compose(k, with_overlay=True):
 
 
 # ---- QA stills ----
-qa_ks = sorted(set([0, 1, 30, 60, 90, 120, 150, 180, 210, 233, 238, 239, 240, 241,
-                    242, 243, 244, C - 1, C, C + 1, 270, 300, N - 2, N - 1]))
+qa_ks = sorted(set([0, 1, 30, 60, 90, 120, 150, 180, 210] +
+                   list(range(max(0, C - 12), C + 2)) +          # 12 frames before the cut
+                   [C - 1, C, C + 1, 270, 300, N - 2, N - 1]))
 qa_ks = [k for k in qa_ks if 0 <= k < N]
 for k in qa_ks:
     cv2.imwrite(f"{QA}/out_k{k:03d}.png", compose(k, True))
@@ -119,9 +157,8 @@ cv2.imwrite(f"{QA}/boundary_C{C}.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALIT
 
 # ---- protection zone, measured BEFORE encoding (exact, lossless) ----
 ov = np.zeros((H, W), np.uint8)
-ov[CB[1]:CB[3], CB[0]:CB[2]] = (cluster[:, :, 3] > 0).astype(np.uint8)
-ov[SB[1]:SB[3], SB[0]:SB[2]] |= (tstroke[:, :, 3] > 0).astype(np.uint8)
-ov[FB[1]:FB[3], FB[0]:FB[2]] |= (tfill[:, :, 3] > 0).astype(np.uint8)
+for lay, bb, _nm, pf, pt in plates:
+    ov[bb[1]:bb[3], bb[0]:bb[2]] |= (lay[:, :, 3] > 0).astype(np.uint8)
 worst = 0
 changed = []
 for k in range(C):
@@ -174,8 +211,13 @@ def encode(path, with_overlay):
 encode(f"{OUT}/成片_最终含贴图.mp4", True)
 encode(f"{OUT}/中间版_无贴图替换版.mp4", False)
 json.dump({"mapping": mapping, "C": C, "N": N, "N1": N1,
+           "src_fps": SRC_FPS, "out_fps": OUT_FPS,
+           "mapping_rule": "output k <- floor(k * src_fps / out_fps)  "
+                           "(frame-copy resample, video1 keeps native 1x speed)",
            "distinct_src": len(set(mapping)),
            "title_bbox": FB, "title_stroke_bbox": SB, "cluster_bbox": CB,
-           "digit_windows": geom["DIGIT_WINDOWS"]},
+           "plates": [{"name": p[2], "bbox": p[1], "from": p[3], "to": p[4]}
+                      for p in plates],
+           "digit_windows": geom.get("DIGIT_WINDOWS", [])},
           open(f"{QA}/build_meta.json", "w"), indent=2)
 print("done")
