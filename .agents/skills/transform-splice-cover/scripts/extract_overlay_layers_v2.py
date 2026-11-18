@@ -273,11 +273,19 @@ for spec in SPEC["layers"]:
     # ============================================================ opaque rect
     if kind == "opaque_rect":
         x0, y0, x1, y1 = spec["box"]
-        med = temporal_median(PRE_FRAMES, (x0, y0, x1, y1))
+        # Per-layer ANALYSIS window.  A reel can carry several layers with
+        # different lifetimes (a card that is on screen f23..f172 next to a
+        # title that is only on screen f24..f158).  The global PRE window then
+        # averages each layer together with frames where the other layer (or
+        # its morph-in) dominates, so every layer gets its own window here.
+        # Default [0, PRE_END-1] keeps the old behaviour.
+        w0, w1 = spec.get("window", [0, PRE_END - 1])
+        win = frames[max(0, w0):min(PRE_END, w1 + 1)]
+        med = temporal_median(win, (x0, y0, x1, y1))
         # a hard-edged opaque sticker must be *constant* in the window; prove it
         worst = 0
-        for k in (0, len(PRE_FRAMES) // 2, len(PRE_FRAMES) - 1):
-            d = np.abs(PRE_FRAMES[k][y0:y1, x0:x1].astype(np.int16)
+        for k in (0, len(win) // 2, len(win) - 1):
+            d = np.abs(win[k][y0:y1, x0:x1].astype(np.int16)
                        - med.astype(np.int16)).max()
             worst = max(worst, int(d))
         a = np.full((y1 - y0, x1 - x0), 255, np.uint8)
@@ -286,13 +294,17 @@ for spec in SPEC["layers"]:
               f"(edge column dominates; interior is static)")
         geom.setdefault("RECT_CONSTANCY", {})[name] = worst
         plates.append({"name": name, "file": f"{name}.png", "bbox": bb,
-                       "from": 0, "to": PRE_END - 1, "z": spec.get("z", 0)})
+                       "from": spec.get("from", 0),
+                       "to": spec.get("to", PRE_END - 1), "z": spec.get("z", 0)})
 
     # ============================================================ white text
     elif kind == "white_text":
         tx0, ty0, tx1, ty1 = spec["roi"]
         box = (tx0, ty0, tx1, ty1)
-        med = temporal_median(PRE_FRAMES, box)
+        # per-layer analysis window (see opaque_rect above); default = PRE
+        w0, w1 = spec.get("window", [0, PRE_END - 1])
+        win = frames[max(0, w0):min(PRE_END, w1 + 1)]
+        med = temporal_median(win, box)
         hsv = cv2.cvtColor(med, cv2.COLOR_BGR2HSV)
         V = hsv[:, :, 2].astype(np.int16)
         S = hsv[:, :, 1].astype(np.int16)
@@ -326,13 +338,21 @@ for spec in SPEC["layers"]:
         print(f"  white glyph comps kept: {int(letters.sum())} px")
 
         # -- coloured sticker next to the text: saturated colour signature
-        red = ((((Hh < 12) | (Hh > 168)) & (S > 130) & (V > 60))
+        #
+        # `red_v` (default 60) is the value floor.  A pure-red glyph sits at
+        # V ~= 255, while a red-haired subject photographed under the same
+        # light sits at V ~= 70-90 -- at the default floor the HAIR is swept
+        # into the plate as a "sticker".  Raising the floor to ~150 keeps the
+        # glyph and drops the hair; measured on one reel: 4 comps / 1268 px
+        # at V>150 vs 6 comps / 2820 px (two of them hair) at V>60.
+        red_v = int(spec.get("red_v", 60))
+        red = ((((Hh < 12) | (Hh > 168)) & (S > 130) & (V > red_v))
                & (excl == 0)).astype(np.uint8)
         n2, l2, st2, _ = cv2.connectedComponentsWithStats(
             cv2.morphologyEx(red, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)), 8)
         colour = np.zeros_like(red)
         for j in range(1, n2):
-            if st2[j, 4] >= 300:
+            if st2[j, 4] >= int(spec.get("min_red_area", 300)):
                 colour[l2 == j] = 1
         if colour.sum():
             ys, xs = np.nonzero(colour)
@@ -383,7 +403,7 @@ for spec in SPEC["layers"]:
                   f"(V<{stroke_v}, within {radius} px of a glyph); "
                   f"counters excluded {int(counters.sum())} px")
         else:
-            stable = stability(PRE_FRAMES, box, [tol])[tol]
+            stable = stability(win, box, [tol])[tol]
             outline_v = int(spec.get("outline_v", 120))
             ring = cv2.dilate(letters, np.ones((15, 15), np.uint8))
             stroke = ((V < outline_v) & (ring > 0) & stable).astype(np.uint8)
@@ -438,7 +458,8 @@ for spec in SPEC["layers"]:
                         (tx0 + cbb[0], ty0 + cbb[1], tx0 + cbb[2], ty0 + cbb[3]),
                         pre_cropped=True)
         plates.append({"name": name, "file": f"{name}.png", "bbox": bb,
-                       "from": 0, "to": PRE_END - 1, "z": spec.get("z", 0)})
+                       "from": spec.get("from", 0),
+                       "to": spec.get("to", PRE_END - 1), "z": spec.get("z", 0)})
         # keep the legacy keys so older verify scripts still work
         geom["TITLE_FILL_BBOX"] = bb
         geom.setdefault("TITLE_STROKE_BBOX", bb)
@@ -526,8 +547,21 @@ for spec in SPEC["layers"]:
             Gu |= (np.median(Wt[a:b], axis=0) > 0.5).astype(np.uint8)
         Gu = cv2.morphologyEx(Gu, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
         n, l, st, _ = cv2.connectedComponentsWithStats(Gu, 8)
-        big = 1 + int(np.argmax(st[1:, 4]))
-        Gu = (l == big).astype(np.uint8)
+        # A counter can be a MULTI-COMPONENT glyph set: "3" followed by three
+        # separate bullets is four white components, and keeping only the
+        # largest one silently drops the bullets.  `glyph_min_area` keeps every
+        # component at or above that area; the default (0) keeps the old
+        # "largest component only" behaviour.
+        gmin = int(spec.get("glyph_min_area", 0))
+        if gmin > 0:
+            keep = np.zeros_like(Gu)
+            for j in range(1, n):
+                if st[j, 4] >= gmin:
+                    keep[l == j] = 1
+            Gu = keep
+        else:
+            big = 1 + int(np.argmax(st[1:, 4]))
+            Gu = (l == big).astype(np.uint8)
         R = cv2.dilate(Gu, np.ones((9, 9), np.uint8)) > 0
 
         # -- value changes: XOR of consecutive white masks restricted to the
@@ -596,7 +630,10 @@ for spec in SPEC["layers"]:
                 cv2.morphologyEx(G | outline | glyph_edge,
                                  cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)),
                 int(spec.get("max_hole", 12)))
-            pad = 4
+            # The crop must include the WHOLE dark stroke: the stroke of a
+            # heavy countdown is ~8 px wide, and a hard-coded pad of 4 cut its
+            # outer half, leaving a thin ring.  Spec-configurable, default 4.
+            pad = int(spec.get("pad", 4))
             bx0 = max(dx0, bb[0] - pad)
             by0 = max(dy0, bb[1] - pad)
             bx1 = min(dx1, bb[2] + pad)

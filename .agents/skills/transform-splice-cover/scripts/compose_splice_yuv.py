@@ -83,6 +83,18 @@ def probe_size(path):
     return int(w), int(h)
 
 
+def probe_vstart(path):
+    """Start PTS of the first video stream (0.0 when it starts at zero)."""
+    out = subprocess.run(
+        ["/opt/homebrew/bin/ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=start_time", "-of", "csv=p=0", path],
+        capture_output=True, text=True).stdout.strip()
+    try:
+        return float(out)
+    except ValueError:
+        return 0.0
+
+
 def read_yuv420(path, w, h):
     """Decode a whole file to planar yuv420p; returns (Y, U, V) uint8 arrays.
 
@@ -177,6 +189,10 @@ for i, p in enumerate(PLATES):
 print(f"plates: {[(p['name'], p['from'], p['to'], p['z']) for p in plates]}")
 
 V1W, V1H = probe_size(V1)
+REEL_V_START = probe_vstart(REEL)
+if REEL_V_START > 0.001:
+    print(f"reel video stream starts at PTS {REEL_V_START:.3f}s -> the pipe is "
+          f"offset by that amount so the picture keeps its sync with the copied audio")
 v1Y, v1U, v1V = read_yuv420(V1, V1W, V1H)
 rY, rU, rV = read_yuv420(REEL, W, H)
 N1, N = len(v1Y), len(rY)
@@ -226,24 +242,61 @@ if abs(LUMA_OFFSET) > 0.01:
 # ---- frame-copy resample: keep video1 at its native 1x speed -------------
 SRC_FPS = probe_fps(V1)
 OUT_FPS = probe_fps(REEL)
-# Native 1x speed: output k reads source frame floor(k * src_fps / out_fps).
+# Optional playback speed of the INSERTED clip (env V1_SPEED, default 1.0).
+# 1x is the default and the preferred choice: it is the take's real tempo.
+# A speed-up is only used when the user explicitly asks for it because the
+# inserted clip reads slower than the reference (a 24 fps take copied onto a
+# 30 fps timeline repeats 1 frame in 5, and that judder reads as "slower").
+# Raising the speed also shortens the consumed source span: at 1.10 the
+# mapping floor(k * 0.8 * 1.10) uses 218 of video1's 243 frames (25 tail
+# frames truncated), so it is a monotonic time map, never a stretch.
+SPEED = float(os.environ.get("V1_SPEED", "1.0"))
+if SPEED <= 0:
+    raise SystemExit(f"V1_SPEED must be > 0, got {SPEED}")
+# output k reads source frame floor(k * src_fps / out_fps * speed).
 # If that runs past the end of video1, video1 is simply NOT long enough to
 # fill 0..C-1 at 1x.  Clamping the tail (the obvious fix) freezes the last
 # 4-5 frames into a visible stutter that lands exactly on the cut; a uniform
 # stretch is forbidden (it shifts the action phase).  So the shortfall is
 # absorbed as extra single-frame holds placed on the calmest motion
 # boundaries of video1, where a repeated frame cannot be seen.
-base = [int(np.floor(k * SRC_FPS / OUT_FPS)) for k in range(C)]
-# Optional last *usable* source frame of video1 (env V1_MAX_SRC).  An inserted
-# clip can end in a cross-dissolve to another costume; those frames belong to
-# neither segment and must never reach the cut.  Capping behaves exactly like a
-# short clip: the surplus frames become extra one-frame holds placed on the
-# calmest motion boundaries (same machinery as the shortfall branch below).
-MAX_SRC = os.environ.get("V1_MAX_SRC")
-LAST = int(MAX_SRC) if MAX_SRC else (N1 - 1)
-LAST = min(LAST, N1 - 1)
-deficit = base[-1] - LAST
-mapping = list(base)
+base = [int(np.floor(k * SRC_FPS / OUT_FPS * SPEED)) for k in range(C)]
+# Optional explicit monotonic time map (env V1_MAP = a JSON file with
+# {"mapping": [C source indices]}).  Used for PHASE ALIGNMENT: two takes of the
+# same choreography do not hit their gestures at the same instants, so a single
+# uniform speed leaves the inserted clip a second behind the reference at the
+# salient poses.  A piecewise-linear, non-decreasing map pins video1's gesture
+# landmarks onto the reference's, and every output frame still comes from a
+# real video1 frame (frame-copy, no interpolation, no stretch).  The local
+# tempo then varies between the map's segments -- that is the cost, and it is
+# bounded by whoever authors the map.
+MAP_FILE = os.environ.get("V1_MAP")
+if MAP_FILE:
+    mapping = [int(v) for v in json.load(open(MAP_FILE))["mapping"]]
+    if len(mapping) != C:
+        raise SystemExit(f"V1_MAP has {len(mapping)} entries, C={C}")
+    if mapping[0] < 0 or mapping[-1] > N1 - 1:
+        raise SystemExit(f"V1_MAP out of range: {mapping[0]}..{mapping[-1]}, "
+                         f"video1 has {N1} frames")
+    if any(b < a for a, b in zip(mapping, mapping[1:])):
+        raise SystemExit("V1_MAP is not monotonic")
+    deficit = 0
+    print(f"phase-aligned map from {MAP_FILE}: source {mapping[0]}..{mapping[-1]}, "
+          f"{len(set(mapping))} distinct, {C - len(set(mapping))} duplicated; "
+          f"local speed {min((b - a) for a, b in zip(mapping, mapping[1:]))}"
+          f"..{max((b - a) for a, b in zip(mapping, mapping[1:]))} src frames/out frame "
+          f"(1x would be {SRC_FPS / OUT_FPS:.3f})")
+else:
+    # Optional last *usable* source frame of video1 (env V1_MAX_SRC).  An inserted
+    # clip can end in a cross-dissolve to another costume; those frames belong to
+    # neither segment and must never reach the cut.  Capping behaves exactly like a
+    # short clip: the surplus frames become extra one-frame holds placed on the
+    # calmest motion boundaries (same machinery as the shortfall branch below).
+    MAX_SRC = os.environ.get("V1_MAX_SRC")
+    LAST = int(MAX_SRC) if MAX_SRC else (N1 - 1)
+    LAST = min(LAST, N1 - 1)
+    deficit = base[-1] - LAST
+    mapping = list(base)
 if deficit > 0:
     # motion between consecutive source frames, measured on the scaled luma
     motion = np.zeros(N1 + 1, np.float32)
@@ -261,18 +314,36 @@ if deficit > 0:
     # on a frame whose neighbours move at the clip average).
     def cost(s):
         return max(motion[s], motion[s + 1]) if s + 1 < N1 else 1e9
+    # Spacing must be derived from the deficit, not hard-coded: a fixed 42-frame
+    # gap only fits 6 holds in 255 frames.  With 11 deficits the strict pass
+    # finds nothing, the relaxed pass then ignores spacing altogether and stacks
+    # six holds on consecutive frames -- a 0.2 s freeze instead of an invisible
+    # single-frame hold.
+    SPACING = max(4, C // (deficit + 1))
     picked = []
     for _ in range(deficit):
         best, best_c = None, None
-        for k in range(1, C):
-            if mapping[k] == mapping[k - 1]:
-                continue                      # already a hold
-            if any(abs(k - q) < max(8, C // 6) for q in picked):
-                continue                      # don't stack two holds
-            c = cost(mapping[k - 1])
-            if best_c is None or c < best_c:
-                best, best_c = k, c
-        if best is None:                      # spacing too strict: relax it
+        sp = SPACING
+        while best is None and sp >= 2:
+            for k in range(1, C):
+                if mapping[k] == mapping[k - 1]:
+                    continue                  # already a hold
+                # never EXTEND an existing resample duplicate into a 3-frame
+                # freeze: a 1-frame hold reads as nothing, a 3-frame run reads
+                # as a hitch -- worst of all on the frames right before the cut
+                if k >= 2 and mapping[k - 1] == mapping[k - 2]:
+                    continue
+                if k + 1 < C and mapping[k + 1] == mapping[k]:
+                    continue
+                if any(abs(k - q) < sp for q in picked):
+                    continue                  # don't stack two holds
+                c = cost(mapping[k - 1])
+                if best_c is None or c < best_c:
+                    best, best_c = k, c
+            if best is None:
+                sp //= 2                      # spacing too strict: halve, retry
+        if best is None:                      # last resort: any non-hold
+            best, best_c = None, None
             for k in range(1, C):
                 if mapping[k] == mapping[k - 1] or k in picked:
                     continue
@@ -291,9 +362,11 @@ if deficit > 0:
           f"{picked}, repeating source frames {held} "
           f"(local motion {[round(cost(s), 2) for s in held]}, clip mean "
           f"{float(motion[1:LAST].mean()):.2f}) instead of freezing the tail")
-mapping = [min(m, LAST) for m in mapping]
-print(f"fps: video1={SRC_FPS} reel={OUT_FPS} -> {len(set(mapping))} distinct source "
-      f"frames ({C - len(set(mapping))} duplicated, "
+mapping = [min(m, LAST) for m in mapping] if not MAP_FILE else mapping
+MAP_MODE = (f"explicit monotonic phase map ({MAP_FILE})" if MAP_FILE
+            else f"uniform speed {SPEED}")
+print(f"fps: video1={SRC_FPS} reel={OUT_FPS} [{MAP_MODE}] -> {len(set(mapping))} "
+      f"distinct source frames ({C - len(set(mapping))} duplicated, "
       f"{N1 - 1 - mapping[-1]} tail frames truncated)")
 
 # ---- the per-frame countdown digits --------------------------------------
@@ -330,6 +403,62 @@ if os.path.exists(f"{LAY}/anim_meta.json"):
                 ops.setdefault(t, []).append(make_op(p, box, f"{L['name']}{t}_{bi}"))
         anim.append({"name": L["name"], "z": L.get("z", 0), "ops": ops})
         print(f"animated layer {L['name']}: {len(ops)} frames, z={L.get('z', 0)}")
+
+
+# ---- optional white flash (strobe) on the INSERTED clip -------------------
+# When the inserted clip is shorter than the PRE window, the surplus is
+# covered by a held frame.  A 0.9 s freeze reads as a stall; the same freeze
+# broken up by camera flashes reads as a flash-burst beat, and the flashes
+# give the costume cut a motivated transition -- the flash frames themselves
+# are no longer "pause" to the eye, so the perceived hold shortens even though
+# the frame count cannot (C is fixed by the reel's costume change).
+# Applied to the PRE segment ONLY (the reel's own POST frames are never
+# touched) and AFTER the overlays, because a flash is a camera-side exposure
+# event: it blows out the burned-in lettering too.
+# Env V1_FLASH = JSON {"frames": {"<out index>": alpha}} with alpha in [0,1].
+WHITE_Y = 235.0            # reference white in bt709 / tv range
+FLASH_FALLOFF = float(os.environ.get("V1_FLASH_FALLOFF", "0.30"))
+FLASH = {}
+FLASH_FILE = os.environ.get("V1_FLASH")
+if FLASH_FILE:
+    FLASH = {int(k): float(v)
+             for k, v in json.load(open(FLASH_FILE))["frames"].items()}
+    FLASH = {k: a for k, a in FLASH.items() if 0 < k < C and a > 0}
+    print(f"flash: {len(FLASH)} frames, alpha {min(FLASH.values()):.2f}.."
+          f"{max(FLASH.values()):.2f}, indices {min(FLASH)}..{max(FLASH)}, "
+          f"radial falloff {FLASH_FALLOFF:.2f}")
+
+
+def _flash_gain(h, w):
+    """Radial gain: 1.0 at the centre, 1-FALLOFF in the corners.
+
+    A partial flash that lightens the frame *uniformly* reads as a colour
+    fade; a real on-camera flash is brightest at the subject and falls off
+    toward the corners.  The gain is folded in so that alpha=1 still yields a
+    fully blown frame (a peak flash does whiten the whole raster).
+    """
+    if FLASH_FALLOFF <= 0:
+        return 1.0
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    cy, cx = (h - 1) / 2.0, (w - 1) / 2.0
+    r2 = ((xx - cx) / cx) ** 2 + ((yy - cy) / cy) ** 2      # 0 centre, 2 corner
+    return 1.0 - FLASH_FALLOFF * np.clip(r2 / 2.0, 0.0, 1.0)
+
+
+_gy = _gc = None
+
+
+def apply_flash(y, u, v, a):
+    """Blow the frame toward reference white (a=1 -> YUV 235/128/128)."""
+    global _gy, _gc
+    if _gy is None:
+        _gy = _flash_gain(H, W)
+        _gc = _gy.reshape(H // 2, 2, W // 2, 2).mean(axis=(1, 3))
+    ay = a * (1.0 - (1.0 - _gy) * (1.0 - a))
+    ac = a * (1.0 - (1.0 - _gc) * (1.0 - a)) * 0.95
+    return (y + (WHITE_Y - y) * ay,
+            u + (128.0 - u) * ac,
+            v + (128.0 - v) * ac)
 
 
 def mix(y, u, v, op):
@@ -388,10 +517,14 @@ def compose(k, with_overlay=True):
     y = v1Y[mapping[k]].astype(np.float32)
     u = v1U[mapping[k]].astype(np.float32)
     v = v1V[mapping[k]].astype(np.float32)
-    if not with_overlay:
-        return y, u, v
-    for op in frame_ops(k):
-        mix(y, u, v, op)
+    if with_overlay:
+        for op in frame_ops(k):
+            mix(y, u, v, op)
+    # the flash is an exposure event, not a layer: it is in BOTH passes, so
+    # "overlay vs plain" still differs only inside the overlay alpha masks.
+    a = FLASH.get(k, 0.0)
+    if a > 0:
+        y, u, v = apply_flash(y, u, v, a)
     return y, u, v
 
 
@@ -459,6 +592,15 @@ def encode(path, with_overlay):
     # rescales the luma, which cost ~2.6 grey levels on the untouched POST
     # segment (39.2 dB instead of 52.8 dB).  Declaring the input makes the
     # pipe a true passthrough.
+    #
+    # The reel's own video start_time must survive (measured 0.1 s here).  A
+    # rawvideo pipe starts at PTS 0, so without an offset the whole picture
+    # runs 3 frames EARLY against the copied audio track and the costume cut
+    # leaves its musical beat.  `-itsoffset` is silently ignored for the
+    # rawvideo demuxer (it rewrites its own pts), so the shift is done with
+    # setpts instead.  The offset is probed from the reel, never hard-coded;
+    # a reel that starts at 0 keeps the old behaviour.
+    shift = f"setpts=PTS+{REEL_V_START:.6f}/TB, " if REEL_V_START > 0.001 else ""
     cmd = [FFMPEG, "-y",
            "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{W}x{H}", "-r", str(FPS),
            "-color_range", "tv", "-colorspace", "bt709",
@@ -469,7 +611,7 @@ def encode(path, with_overlay):
            "-c:v", "libx264", "-preset", "medium", "-crf", CRF,
            "-pix_fmt", "yuv420p",
            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-           "-color_range", "tv", "-vf", "setsar=1",
+           "-color_range", "tv", "-vf", f"{shift}setsar=1",
            "-c:a", "copy", "-movflags", "+faststart", "-video_track_timescale", "15360", path]
     print(f"encoding {os.path.basename(path)} (overlay={with_overlay})")
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -491,15 +633,23 @@ def encode(path, with_overlay):
 encode(f"{OUT}/成片_最终含贴图.mp4", True)
 encode(f"{OUT}/中间版_无贴图替换版.mp4", False)
 json.dump({"mapping": mapping, "C": C, "N": N, "N1": N1,
-           "src_fps": SRC_FPS, "out_fps": OUT_FPS,
-           "mapping_rule": "output k <- floor(k * src_fps / out_fps)  "
-                           "(frame-copy resample, video1 keeps native 1x speed)",
+           "src_fps": SRC_FPS, "out_fps": OUT_FPS, "v1_speed": SPEED,
+           "v1_map": MAP_FILE or None, "mapping_mode": MAP_MODE,
+           "mapping_rule": (f"explicit phase-aligned monotonic map from {MAP_FILE} "
+                            "(frame-copy, local tempo varies)"
+                            if MAP_FILE else
+                            "output k <- floor(k * src_fps / out_fps * speed)  "
+                            "(frame-copy resample; speed=1 is video1's native tempo)"),
            "distinct_src": len(set(mapping)),
            "compositor": "yuv420p domain (no RGB round trip)",
            "plates": [{"name": p["name"], "bbox": list(p["box"]),
                        "from": p["from"], "to": p["to"], "z": p["z"]} for p in plates],
            "animated": [{"name": L["name"], "frames": len(L["ops"]), "z": L["z"]}
                         for L in anim],
-           "digit_windows": geom.get("DIGIT_WINDOWS", [])},
+           "digit_windows": geom.get("DIGIT_WINDOWS", []),
+           "flash": {str(k): a for k, a in sorted(FLASH.items())},
+           "flash_note": "exposure-only treatment on the PRE segment (y -> 235, "
+                         "uv -> 128 by alpha); POST frames are untouched and the "
+                         "overlay-vs-plain delta stays zero outside the overlay masks"},
           open(f"{QA}/build_meta.json", "w"), indent=2)
 print("done")
